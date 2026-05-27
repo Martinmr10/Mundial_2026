@@ -347,15 +347,30 @@ function setGoals(matchId) {
     const derivedOutcome = g1 > g2 ? "1" : g1 < g2 ? "2" : "x";
     playerPicks[matchId].outcome = derivedOutcome;
 
-    // Actualizar visualmente los botones para reflejar el outcome derivado
+    // Actualizar visualmente los botones
     const container = document.getElementById("matches-container");
     ["1","x","2"].forEach(v => {
       const btn = container.querySelector(`[onclick="setPick('${matchId}','${v}')"]`);
       if (btn) {
-        btn.classList.remove("selected","correct","wrong");
+        btn.classList.remove("selected","correct","wrong","auto-derived");
         if (v === derivedOutcome) btn.classList.add("selected","auto-derived");
       }
     });
+  } else {
+    // Si borra uno de los dos goles, limpiar el outcome derivado
+    // (solo si no fue seleccionado manualmente)
+    const container = document.getElementById("matches-container");
+    const anyManual = ["1","x","2"].some(v => {
+      const btn = container.querySelector(`[onclick="setPick('${matchId}','${v}')"]`);
+      return btn && btn.classList.contains("selected") && !btn.classList.contains("auto-derived");
+    });
+    if (!anyManual) {
+      playerPicks[matchId].outcome = null;
+      ["1","x","2"].forEach(v => {
+        const btn = container.querySelector(`[onclick="setPick('${matchId}','${v}')"]`);
+        if (btn) btn.classList.remove("selected","correct","wrong","auto-derived");
+      });
+    }
   }
 }
 
@@ -364,10 +379,24 @@ async function savePlayerPicks() {
   const allMatchIds = Object.keys(playerPicks);
   if (!allMatchIds.length) { el.textContent="⚠️ No hay picks que guardar"; setTimeout(()=>{el.textContent="";},3000); return; }
 
+  // Antes de filtrar, asegurarse que todos los picks con marcador
+  // tengan el outcome derivado correctamente
+  allMatchIds.forEach(mid => {
+    const p = playerPicks[mid];
+    if (!p) return;
+    const g1 = (p.goals1 !== null && p.goals1 !== undefined && p.goals1 !== "") ? parseInt(p.goals1) : null;
+    const g2 = (p.goals2 !== null && p.goals2 !== undefined && p.goals2 !== "") ? parseInt(p.goals2) : null;
+    if (g1 !== null && g2 !== null && !isNaN(g1) && !isNaN(g2) && !p.outcome) {
+      playerPicks[mid].outcome = g1 > g2 ? "1" : g1 < g2 ? "2" : "x";
+    }
+  });
+
   // Solo guardar picks de partidos que NO han empezado todavía
   const saveable = allMatchIds.filter(mid => {
     const m = ALL_MATCHES.find(x => x.id === mid);
-    return m && !isMatchLocked(m.kickoff);
+    const p = playerPicks[mid];
+    // Necesita outcome (ya sea manual o derivado del marcador)
+    return m && !isMatchLocked(m.kickoff) && p && p.outcome;
   });
 
   const blocked = allMatchIds.length - saveable.length;
@@ -390,7 +419,15 @@ async function savePlayerPicks() {
       ? `✅ Guardados ${saveable.length} picks (${blocked} bloqueado${blocked>1?'s':''})`
       : `✅ Picks guardados correctamente`;
     el.textContent = msg; el.className = "save-status ok";
-  } catch(e) { el.textContent = "❌ Error: "+e.message; }
+  } catch(e) {
+    // Si el error es de duplicado (ya guardado antes), mostrar mensaje amigable
+    if (e.message.includes("23505") || e.message.includes("duplicate") || e.message.includes("409")) {
+      el.textContent = "✅ Picks ya fueron guardados anteriormente";
+      el.className = "save-status ok";
+    } else {
+      el.textContent = "❌ Error: "+e.message;
+    }
+  }
   setTimeout(()=>{el.textContent=""; el.className="save-status";}, 3500);
 }
 
