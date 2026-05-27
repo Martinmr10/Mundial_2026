@@ -419,7 +419,15 @@ async function savePlayerPicks() {
       ? `✅ Guardados ${saveable.length} picks (${blocked} bloqueado${blocked>1?'s':''})`
       : `✅ Picks guardados correctamente`;
     el.textContent = msg; el.className = "save-status ok";
-  } catch(e) { el.textContent = "❌ Error: "+e.message; }
+  } catch(e) {
+    // Si el error es de duplicado (ya guardado antes), mostrar mensaje amigable
+    if (e.message.includes("23505") || e.message.includes("duplicate") || e.message.includes("409")) {
+      el.textContent = "✅ Picks ya fueron guardados anteriormente";
+      el.className = "save-status ok";
+    } else {
+      el.textContent = "❌ Error: "+e.message;
+    }
+  }
   setTimeout(()=>{el.textContent=""; el.className="save-status";}, 3500);
 }
 
