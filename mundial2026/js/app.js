@@ -204,6 +204,7 @@ function switchTab(tab) {
   document.querySelectorAll("#screen-player .tab").forEach(t => t.classList.toggle("active", t.dataset.tab===tab));
   document.querySelectorAll("#screen-player .tab-content").forEach(c => c.classList.toggle("active", c.id==="tab-"+tab));
   if (tab==="mispuntos") renderMisPuntos();
+  if (tab==="tabla") renderTablaGrupos();
 }
 function switchAdminTab(tab) {
   document.querySelectorAll("#screen-admin .tab").forEach(t => t.classList.toggle("active", t.dataset.tab===tab));
@@ -805,3 +806,100 @@ async function resetAllData() {
 
 // ── Init ──────────────────────────────────────────────────
 populateLoginDropdown();
+
+// ── Tabla de posiciones por grupo ────────────────────────
+function renderTablaGrupos() {
+  const container = document.getElementById("tabla-grupos-container");
+  if (!container) return;
+
+  // Calcular posiciones de cada equipo basado en resultados reales
+  const groupKeys = Object.keys(GROUP_TEAMS);
+  const groupMatches = ALL_MATCHES.filter(m => m.phase === "grupos");
+
+  container.innerHTML = groupKeys.map(g => {
+    const teams = GROUP_TEAMS[g];
+    // Inicializar stats
+    const stats = {};
+    teams.forEach(t => {
+      stats[t] = { pj:0, pg:0, pe:0, pp:0, gf:0, gc:0, pts:0 };
+    });
+
+    // Procesar resultados del grupo
+    groupMatches
+      .filter(m => m.group === "Grupo "+g)
+      .forEach(m => {
+        const r = cachedResults[m.id];
+        if (!r || r.score1 === undefined) return;
+        const s1 = r.score1, s2 = r.score2;
+        const t1 = stats[m.team1], t2 = stats[m.team2];
+        if (!t1 || !t2) return;
+
+        t1.pj++; t2.pj++;
+        t1.gf += s1; t1.gc += s2;
+        t2.gf += s2; t2.gc += s1;
+
+        if (s1 > s2) {
+          t1.pg++; t1.pts += 3;
+          t2.pp++;
+        } else if (s1 < s2) {
+          t2.pg++; t2.pts += 3;
+          t1.pp++;
+        } else {
+          t1.pe++; t1.pts++;
+          t2.pe++; t2.pts++;
+        }
+      });
+
+    // Ordenar: pts desc, dif goles desc, gf desc
+    const sorted = teams.slice().sort((a,b) => {
+      const sa = stats[a], sb = stats[b];
+      if (sb.pts !== sa.pts) return sb.pts - sa.pts;
+      const difA = sa.gf - sa.gc, difB = sb.gf - sb.gc;
+      if (difB !== difA) return difB - difA;
+      return sb.gf - sa.gf;
+    });
+
+    return `
+      <div class="grupo-tabla-block">
+        <div class="grupo-tabla-header">GRUPO ${g}</div>
+        <div class="grupo-tabla-table">
+          <div class="gt-row gt-head">
+            <span class="gt-pos">#</span>
+            <span class="gt-team">País</span>
+            <span class="gt-stat">PJ</span>
+            <span class="gt-stat">G</span>
+            <span class="gt-stat">E</span>
+            <span class="gt-stat">P</span>
+            <span class="gt-stat">GF</span>
+            <span class="gt-stat">GC</span>
+            <span class="gt-stat gt-pts">PTS</span>
+          </div>
+          ${sorted.map((team, i) => {
+            const s = stats[team];
+            const flag = FLAGS[team] || "🏳";
+            const qualify = i < 2 ? "qualify-direct" : i === 2 ? "qualify-third" : "";
+            return `
+              <div class="gt-row ${qualify}">
+                <span class="gt-pos">${i+1}</span>
+                <span class="gt-team"><span class="gt-flag">${flag}</span>${team}</span>
+                <span class="gt-stat">${s.pj}</span>
+                <span class="gt-stat">${s.pg}</span>
+                <span class="gt-stat">${s.pe}</span>
+                <span class="gt-stat">${s.pp}</span>
+                <span class="gt-stat">${s.gf}</span>
+                <span class="gt-stat">${s.gc}</span>
+                <span class="gt-stat gt-pts">${s.pts}</span>
+              </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+  }).join("");
+
+  // Leyenda
+  container.innerHTML += `
+    <div class="gt-leyenda">
+      <span class="leyenda-item qualify-direct-dot">■</span> Clasificado directo &nbsp;
+      <span class="leyenda-item qualify-third-dot">■</span> Posible mejor 3°
+    </div>`;
+}
+
