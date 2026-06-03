@@ -250,9 +250,12 @@ function renderMatchCard(m, result) {
     return pick.outcome===getOutcome(result.score1,result.score2) ? "selected correct" : "selected wrong";
   };
 
+  // Partido bloqueado sin pronóstico
+  const noPick = locked && !pick.outcome;
+
   return `
     <div class="match-card ${locked?'locked':''}">
-      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${isMatchLocked(m.kickoff) && !hasResult ? "🔒" : ""}</div>
+      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""}</div>
       <div class="teams-row">
         <div class="team"><span class="flag">${f1}</span><span class="tname">${m.team1}</span></div>
         ${hasResult
@@ -261,6 +264,11 @@ function renderMatchCard(m, result) {
         <div class="team right"><span class="tname">${m.team2}</span><span class="flag">${f2}</span></div>
       </div>
 
+      ${noPick ? `
+        <div class="no-pick-msg">
+          ⛔ Sin pronóstico — el partido ya inició
+        </div>
+      ` : `
       <div class="pick-row">
         <button class="pick-btn ${pickClass('1')}" ${locked?"disabled":""} onclick="setPick('${m.id}','1')">Gana ${m.team1}</button>
         <button class="pick-btn draw ${pickClass('x')}" ${locked?"disabled":""} onclick="setPick('${m.id}','x')">Empate</button>
@@ -287,6 +295,7 @@ function renderMatchCard(m, result) {
         <div class="pick-result-msg ${pts>0?'msg-ok':'msg-fail'}">
           ${pts>0 ? `✅ +${pts} punto${pts!==1?'s':''} — ${getResultLabel(pick,result)}` : '❌ Fallaste este partido'}
         </div>` : ""}
+      `}
     </div>`;
 }
 
@@ -902,4 +911,3 @@ function renderTablaGrupos() {
       <span class="leyenda-item qualify-third-dot">■</span> Posible mejor 3°
     </div>`;
 }
-
