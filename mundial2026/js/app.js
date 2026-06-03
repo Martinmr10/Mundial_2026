@@ -241,7 +241,7 @@ function renderMatchCard(m, result) {
   const pick = playerPicks[m.id] || {};
   const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
   const hasResult = result && result.score1 !== undefined;
-  const locked = isMatchLocked(m.kickoff); // bloquear cuando inicia el partido
+  const locked = isMatchLocked(m.kickoff) || hasResult; // bloqueado si ya inició O si ya hay resultado
   const pts = hasResult && pick.outcome ? calcPoints(pick, result) : null;
 
   const pickClass = v => {
@@ -252,6 +252,10 @@ function renderMatchCard(m, result) {
 
   // Partido bloqueado sin pronóstico
   const noPick = locked && !pick.outcome;
+  // Mensaje según si tiene resultado o solo está bloqueado por hora
+  const noPickMsg = hasResult
+    ? "⛔ Sin pronóstico — el resultado ya fue registrado"
+    : "⛔ Sin pronóstico — el partido ya inició";
 
   return `
     <div class="match-card ${locked?'locked':''}">
@@ -266,7 +270,7 @@ function renderMatchCard(m, result) {
 
       ${noPick ? `
         <div class="no-pick-msg">
-          ⛔ Sin pronóstico — el partido ya inició
+          ${noPickMsg}
         </div>
       ` : `
       <div class="pick-row">
@@ -308,7 +312,7 @@ function getResultLabel(pick, result) {
 
 function setPick(matchId, outcome) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && isMatchLocked(m.kickoff)) return;
+  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
   if (!playerPicks[matchId]) playerPicks[matchId] = {};
   playerPicks[matchId].outcome = outcome;
 
@@ -341,7 +345,7 @@ function setPick(matchId, outcome) {
 
 function setGoals(matchId) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && isMatchLocked(m.kickoff)) return;
+  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
 
   const g1val = document.getElementById("g1-"+matchId)?.value;
   const g2val = document.getElementById("g2-"+matchId)?.value;
@@ -405,8 +409,9 @@ async function savePlayerPicks() {
   const saveable = allMatchIds.filter(mid => {
     const m = ALL_MATCHES.find(x => x.id === mid);
     const p = playerPicks[mid];
-    // Necesita outcome (ya sea manual o derivado del marcador)
-    return m && !isMatchLocked(m.kickoff) && p && p.outcome;
+    // Bloquear si ya inició O si ya tiene resultado
+    const isBlocked = !m || isMatchLocked(m.kickoff) || !!cachedResults[mid];
+    return !isBlocked && p && p.outcome;
   });
 
   const blocked = allMatchIds.length - saveable.length;
