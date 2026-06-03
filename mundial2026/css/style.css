@@ -897,3 +897,16 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
 }
 .qualify-direct-dot { color: #00c853; font-size: 14px; }
 .qualify-third-dot  { color: var(--gold); font-size: 14px; opacity: 0.6; }
+
+/* ── SIN PRONÓSTICO ───────────────────────────────────── */
+.no-pick-msg {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: rgba(150,150,150,0.08);
+  border: 1px dashed rgba(150,150,150,0.25);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #8899bb;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
