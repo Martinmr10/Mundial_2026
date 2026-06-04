@@ -241,7 +241,7 @@ function renderMatchCard(m, result) {
   const pick = playerPicks[m.id] || {};
   const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
   const hasResult = result && result.score1 !== undefined;
-  const locked = isMatchLocked(m.kickoff); // bloquear cuando inicia el partido
+  const locked = isMatchLocked(m.kickoff) || hasResult; // bloquear cuando inicia O cuando ya hay resultado
   const pts = hasResult && pick.outcome ? calcPoints(pick, result) : null;
 
   const pickClass = v => {
@@ -250,9 +250,12 @@ function renderMatchCard(m, result) {
     return pick.outcome===getOutcome(result.score1,result.score2) ? "selected correct" : "selected wrong";
   };
 
+  const noPick = locked && !pick.outcome;
+  const noPickMsg = hasResult ? "⛔ Sin pronóstico — el resultado ya fue registrado" : "⛔ Sin pronóstico — el partido ya inició";
+
   return `
     <div class="match-card ${locked?'locked':''}">
-      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${isMatchLocked(m.kickoff) && !hasResult ? "🔒" : ""}</div>
+      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""}</div>
       <div class="teams-row">
         <div class="team"><span class="flag">${f1}</span><span class="tname">${m.team1}</span></div>
         ${hasResult
@@ -261,13 +264,16 @@ function renderMatchCard(m, result) {
         <div class="team right"><span class="tname">${m.team2}</span><span class="flag">${f2}</span></div>
       </div>
 
+      ${noPick ? `
+        <div class="no-pick-msg">${noPickMsg}</div>
+      ` : `
       <div class="pick-row">
         <button class="pick-btn ${pickClass('1')}" ${locked?"disabled":""} onclick="setPick('${m.id}','1')">Gana ${m.team1}</button>
         <button class="pick-btn draw ${pickClass('x')}" ${locked?"disabled":""} onclick="setPick('${m.id}','x')">Empate</button>
         <button class="pick-btn ${pickClass('2')}" ${locked?"disabled":""} onclick="setPick('${m.id}','2')">Gana ${m.team2}</button>
-      </div>
+      </div>`}
 
-      ${(!locked) ? `
+      ${(!noPick && !locked) ? `
       <div class="score-prediction">
         <span class="score-pred-label">Pronostica el marcador — o solo elige ganador arriba:</span>
         <div class="score-pred-row">
@@ -308,7 +314,7 @@ function getResultLabel(pick, result) {
 
 function setPick(matchId, outcome) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && isMatchLocked(m.kickoff)) return;
+  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
   if (!playerPicks[matchId]) playerPicks[matchId] = {};
   playerPicks[matchId].outcome = outcome;
 
@@ -341,7 +347,7 @@ function setPick(matchId, outcome) {
 
 function setGoals(matchId) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && isMatchLocked(m.kickoff)) return;
+  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
 
   const g1val = document.getElementById("g1-"+matchId)?.value;
   const g2val = document.getElementById("g2-"+matchId)?.value;
