@@ -291,10 +291,19 @@ function renderMatchCard(m, result) {
 }
 
 function getResultLabel(pick, result) {
-  const g1=parseInt(pick.goals1), g2=parseInt(pick.goals2);
-  if (!isNaN(g1) && !isNaN(g2) && g1===result.score1 && g2===result.score2) return "¡Marcador exacto!";
-  if (!isNaN(g1) && !isNaN(g2) && (g1===result.score1 || g2===result.score2)) return "Acertaste ganador + goles de un equipo";
-  return "Acertaste el ganador";
+  const g1 = parseInt(pick.goals1), g2 = parseInt(pick.goals2);
+  const hasPred = !isNaN(g1) && !isNaN(g2);
+  const actual = getOutcome(result.score1, result.score2);
+  const wonCorrect = pick.outcome === actual;
+  const g1ok = hasPred && g1 === result.score1;
+  const g2ok = hasPred && g2 === result.score2;
+
+  if (hasPred && g1ok && g2ok)   return "🎯 ¡Marcador exacto!";
+  if (wonCorrect && g1ok && g2ok) return "🎯 ¡Marcador exacto!";
+  if (wonCorrect && (g1ok || g2ok)) return "Acertaste ganador + goles marcados";
+  if (!wonCorrect && (g1ok || g2ok)) return "Acertaste goles marcados";
+  if (wonCorrect) return "Acertaste el ganador";
+  return "Acertaste";
 }
 
 function setPick(matchId, outcome) {
