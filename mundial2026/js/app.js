@@ -241,7 +241,7 @@ function renderMatchCard(m, result) {
   const pick = playerPicks[m.id] || {};
   const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
   const hasResult = result && result.score1 !== undefined;
-  const locked = isMatchLocked(m.kickoff) || hasResult; // bloqueado si ya inició O si ya hay resultado
+  const locked = isMatchLocked(m.kickoff); // bloquear cuando inicia el partido
   const pts = hasResult && pick.outcome ? calcPoints(pick, result) : null;
 
   const pickClass = v => {
@@ -250,16 +250,9 @@ function renderMatchCard(m, result) {
     return pick.outcome===getOutcome(result.score1,result.score2) ? "selected correct" : "selected wrong";
   };
 
-  // Partido bloqueado sin pronóstico
-  const noPick = locked && !pick.outcome;
-  // Mensaje según si tiene resultado o solo está bloqueado por hora
-  const noPickMsg = hasResult
-    ? "⛔ Sin pronóstico — el resultado ya fue registrado"
-    : "⛔ Sin pronóstico — el partido ya inició";
-
   return `
     <div class="match-card ${locked?'locked':''}">
-      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""}</div>
+      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${isMatchLocked(m.kickoff) && !hasResult ? "🔒" : ""}</div>
       <div class="teams-row">
         <div class="team"><span class="flag">${f1}</span><span class="tname">${m.team1}</span></div>
         ${hasResult
@@ -268,11 +261,6 @@ function renderMatchCard(m, result) {
         <div class="team right"><span class="tname">${m.team2}</span><span class="flag">${f2}</span></div>
       </div>
 
-      ${noPick ? `
-        <div class="no-pick-msg">
-          ${noPickMsg}
-        </div>
-      ` : `
       <div class="pick-row">
         <button class="pick-btn ${pickClass('1')}" ${locked?"disabled":""} onclick="setPick('${m.id}','1')">Gana ${m.team1}</button>
         <button class="pick-btn draw ${pickClass('x')}" ${locked?"disabled":""} onclick="setPick('${m.id}','x')">Empate</button>
@@ -299,7 +287,6 @@ function renderMatchCard(m, result) {
         <div class="pick-result-msg ${pts>0?'msg-ok':'msg-fail'}">
           ${pts>0 ? `✅ +${pts} punto${pts!==1?'s':''} — ${getResultLabel(pick,result)}` : '❌ Fallaste este partido'}
         </div>` : ""}
-      `}
     </div>`;
 }
 
@@ -312,7 +299,7 @@ function getResultLabel(pick, result) {
 
 function setPick(matchId, outcome) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
+  if (m && isMatchLocked(m.kickoff)) return;
   if (!playerPicks[matchId]) playerPicks[matchId] = {};
   playerPicks[matchId].outcome = outcome;
 
@@ -345,7 +332,7 @@ function setPick(matchId, outcome) {
 
 function setGoals(matchId) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
+  if (m && isMatchLocked(m.kickoff)) return;
 
   const g1val = document.getElementById("g1-"+matchId)?.value;
   const g2val = document.getElementById("g2-"+matchId)?.value;
@@ -409,9 +396,8 @@ async function savePlayerPicks() {
   const saveable = allMatchIds.filter(mid => {
     const m = ALL_MATCHES.find(x => x.id === mid);
     const p = playerPicks[mid];
-    // Bloquear si ya inició O si ya tiene resultado
-    const isBlocked = !m || isMatchLocked(m.kickoff) || !!cachedResults[mid];
-    return !isBlocked && p && p.outcome;
+    // Necesita outcome (ya sea manual o derivado del marcador)
+    return m && !isMatchLocked(m.kickoff) && p && p.outcome;
   });
 
   const blocked = allMatchIds.length - saveable.length;
@@ -474,12 +460,25 @@ function renderMisPuntos() {
         const r = cachedResults[m.id], p = playerPicks[m.id];
         const pts = calcPoints(p, r);
         const f1=FLAGS[m.team1]||"🏳", f2=FLAGS[m.team2]||"🏳";
-        const hasPred = p.goals1!=null && p.goals2!=null;
+        const hasPred = p.goals1!=null && p.goals2!=null && p.goals1!=="" && p.goals2!=="";
+
+        // Construir texto del pronóstico siempre
+        let pronostico = "";
+        if (hasPred) {
+          pronostico = `${p.goals1}–${p.goals2}`;
+        } else if (p.outcome === "1") {
+          pronostico = `Gana ${m.team1}`;
+        } else if (p.outcome === "2") {
+          pronostico = `Gana ${m.team2}`;
+        } else if (p.outcome === "x") {
+          pronostico = "Empate";
+        }
+
         return `<div class="historial-row ${pts>0?'ok':'fail'}">
           <span class="historial-icon">${pts>0?'✅':'❌'}</span>
           <div style="flex:1">
             <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}</div>
-            ${hasPred ? `<div style="font-size:11px;color:#8899bb">Tu pronóstico: ${p.goals1}–${p.goals2}</div>` : ""}
+            <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}</div>
           </div>
           <span class="historial-pts">${pts>0?'+'+pts:'0'} pts</span>
         </div>`;
