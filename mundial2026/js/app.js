@@ -228,13 +228,9 @@ function renderPlayerMatches(phase) {
   const matches = ALL_MATCHES.filter(m => m.phase===phase && cachedEnabled[m.id]);
   const container = document.getElementById("matches-container");
   if (!matches.length) { container.innerHTML=`<div class="empty-state">⏳ El administrador aún no ha habilitado partidos en esta fase.<br><br>¡Vuelve pronto!</div>`; return; }
-  const grouped = {};
-  matches.forEach(m => { if(!grouped[m.group]) grouped[m.group]=[]; grouped[m.group].push(m); });
-  container.innerHTML = Object.entries(grouped).map(([group,gm])=>`
-    <div class="group-block">
-      <div class="group-label">${group}</div>
-      ${gm.map(m=>renderMatchCard(m, cachedResults[m.id])).join("")}
-    </div>`).join("");
+  // Ordenar por hora de inicio
+  const sorted = matches.slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
+  container.innerHTML = `<div class="group-block">${sorted.map(m=>renderMatchCard(m, cachedResults[m.id])).join("")}</div>`;
 }
 
 function renderMatchCard(m, result) {
@@ -255,7 +251,7 @@ function renderMatchCard(m, result) {
 
   return `
     <div class="match-card ${locked?'locked':''}">
-      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""}</div>
+      <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""} <span class="match-group-tag">${m.group}</span></div>
       <div class="teams-row">
         <div class="team"><span class="flag">${f1}</span><span class="tname">${m.team1}</span></div>
         ${hasResult
@@ -525,15 +521,10 @@ async function renderAdminTabla() {
 
 // ── Admin: resultados ─────────────────────────────────────
 function renderAdminMatches(phase) {
-  const matches = ALL_MATCHES.filter(m => m.phase===phase);
+  const matches = ALL_MATCHES.filter(m => m.phase===phase)
+    .slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
   const container = document.getElementById("admin-matches-container");
-  const grouped = {};
-  matches.forEach(m => { if(!grouped[m.group]) grouped[m.group]=[]; grouped[m.group].push(m); });
-  container.innerHTML = Object.entries(grouped).map(([group,gm])=>`
-    <div class="group-block">
-      <div class="group-label">${group}</div>
-      ${gm.map(m=>renderAdminMatchCard(m)).join("")}
-    </div>`).join("");
+  container.innerHTML = `<div class="group-block">${matches.map(m=>renderAdminMatchCard(m)).join("")}</div>`;
 }
 
 function renderAdminMatchCard(m) {
@@ -545,7 +536,7 @@ function renderAdminMatchCard(m) {
   return `
     <div class="match-card admin-match ${enabled ? 'match-enabled' : 'match-disabled'}">
       <div class="match-card-top">
-        <span class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : ""} ${locked && !hasResult ? "🔒" : ""}</span>
+        <span class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : ""} ${locked && !hasResult ? "🔒" : ""} <span class="match-group-tag">${m.group}</span></span>
         <button class="btn-toggle ${enabled ? 'enabled' : 'disabled'}"
           onclick="toggleMatch('${m.id}', ${enabled})">
           ${enabled ? "✅ Habilitado" : "🔴 Deshabilitado"}
