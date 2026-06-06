@@ -910,3 +910,17 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
   text-align: center;
   letter-spacing: 0.3px;
 }
+/* ── GROUP TAG EN CADA PARTIDO ────────────────────────── */
+.match-group-tag {
+  display: inline-block;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--gold);
+  background: rgba(255,214,0,0.08);
+  border: 1px solid rgba(255,214,0,0.2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
