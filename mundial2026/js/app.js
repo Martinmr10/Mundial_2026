@@ -84,17 +84,38 @@ function hideLoading()   { document.getElementById("loading-overlay").style.disp
 
 function getOutcome(s1, s2) { return s1>s2?"1":s1<s2?"2":"x"; }
 
+// ── HELPER: normalizar goles (null/vacío = 0) ─────────────
+function parseGoal(val) {
+  if (val === null || val === undefined || val === "") return null;
+  const n = parseInt(val);
+  return isNaN(n) ? null : n;
+}
+
+// Si el jugador pone solo uno de los dos goles, el otro se asume 0
+function resolveGoals(pick) {
+  const raw1 = parseGoal(pick.goals1);
+  const raw2 = parseGoal(pick.goals2);
+  // Si ambos están vacíos → sin predicción de marcador
+  if (raw1 === null && raw2 === null) return { g1: null, g2: null, hasPrediction: false };
+  // Si solo uno está lleno → el otro es 0
+  const g1 = raw1 !== null ? raw1 : 0;
+  const g2 = raw2 !== null ? raw2 : 0;
+  return { g1, g2, hasPrediction: true };
+}
+
 function calcPoints(pick, result) {
   if (!pick || !result) return 0;
   const s1 = parseInt(result.score1);
   const s2 = parseInt(result.score2);
   if (isNaN(s1) || isNaN(s2)) return 0;
-  const g1 = (pick.goals1 !== null && pick.goals1 !== undefined && pick.goals1 !== "") ? parseInt(pick.goals1) : null;
-  const g2 = (pick.goals2 !== null && pick.goals2 !== undefined && pick.goals2 !== "") ? parseInt(pick.goals2) : null;
-  const hasPrediction = g1 !== null && g2 !== null && !isNaN(g1) && !isNaN(g2);
+
+  const { g1, g2, hasPrediction } = resolveGoals(pick);
   const actual = getOutcome(s1, s2);
   const wonCorrect = pick.outcome === actual;
+
+  // Marcador exacto: ambos goles correctos = 1 + 4 = 5 pts
   if (hasPrediction && g1 === s1 && g2 === s2) return settings.ptsWinner + settings.ptsExact;
+
   let pts = 0;
   if (wonCorrect) pts += settings.ptsWinner;
   if (hasPrediction) {
@@ -215,6 +236,11 @@ function renderMatchCard(m, result) {
   };
   const noPick = locked && !pick.outcome;
   const noPickMsg = hasResult ? "⛔ Sin pronóstico — el resultado ya fue registrado" : "⛔ Sin pronóstico — el partido ya inició";
+
+  // Mostrar pronóstico con goles resueltos (null = 0)
+  const { g1: pg1, g2: pg2, hasPrediction: hasPred } = resolveGoals(pick);
+  const pronosticoDisplay = hasPred ? `${pg1}–${pg2}` : null;
+
   return `
     <div class="match-card ${locked?'locked':''}">
       <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""} <span class="match-group-tag">${m.group}</span></div>
@@ -248,18 +274,16 @@ function renderMatchCard(m, result) {
 }
 
 function getResultLabel(pick, result) {
-  const g1 = parseInt(pick.goals1), g2 = parseInt(pick.goals2);
+  const { g1, g2, hasPrediction } = resolveGoals(pick);
   const s1 = parseInt(result.score1), s2 = parseInt(result.score2);
-  const hasPred = !isNaN(g1) && !isNaN(g2);
   const actual = getOutcome(s1, s2);
   const wonCorrect = pick.outcome === actual;
-  const g1ok = hasPred && g1 === s1;
-  const g2ok = hasPred && g2 === s2;
-  if (hasPred && g1ok && g2ok)   return "🎯 ¡Marcador exacto!";
-  if (wonCorrect && g1ok && g2ok) return "🎯 ¡Marcador exacto!";
-  if (wonCorrect && (g1ok || g2ok)) return "Acertaste ganador + goles marcados";
-  if (!wonCorrect && (g1ok || g2ok)) return "Acertaste goles marcados";
-  if (wonCorrect) return "Acertaste el ganador";
+  const g1ok = hasPrediction && g1 === s1;
+  const g2ok = hasPrediction && g2 === s2;
+  if (hasPrediction && g1ok && g2ok)    return "🎯 ¡Marcador exacto!";
+  if (wonCorrect && (g1ok || g2ok))     return "Acertaste ganador + goles marcados";
+  if (!wonCorrect && (g1ok || g2ok))    return "Acertaste goles marcados";
+  if (wonCorrect)                        return "Acertaste el ganador";
   return "Acertaste";
 }
 
@@ -297,8 +321,11 @@ function setGoals(matchId) {
   const g2 = g2val !== "" && g2val !== undefined ? parseInt(g2val) : null;
   if (!playerPicks[matchId]) playerPicks[matchId] = {};
   playerPicks[matchId].goals1 = g1; playerPicks[matchId].goals2 = g2;
-  if (g1 !== null && g2 !== null && !isNaN(g1) && !isNaN(g2)) {
-    const derivedOutcome = g1 > g2 ? "1" : g1 < g2 ? "2" : "x";
+
+  // Derivar outcome usando resolveGoals (asume 0 si uno está vacío)
+  const { g1: rg1, g2: rg2, hasPrediction } = resolveGoals({goals1: g1, goals2: g2});
+  if (hasPrediction) {
+    const derivedOutcome = rg1 > rg2 ? "1" : rg1 < rg2 ? "2" : "x";
     playerPicks[matchId].outcome = derivedOutcome;
     const container = document.getElementById("matches-container");
     ["1","x","2"].forEach(v => {
@@ -322,12 +349,21 @@ async function savePlayerPicks() {
   const el = document.getElementById("save-status");
   const allMatchIds = Object.keys(playerPicks);
   if (!allMatchIds.length) { el.textContent="⚠️ No hay picks que guardar"; setTimeout(()=>{el.textContent="";},3000); return; }
+
+  // Derivar outcome para picks con marcador parcial antes de guardar
   allMatchIds.forEach(mid => {
     const p = playerPicks[mid]; if (!p) return;
-    const g1 = (p.goals1 !== null && p.goals1 !== undefined && p.goals1 !== "") ? parseInt(p.goals1) : null;
-    const g2 = (p.goals2 !== null && p.goals2 !== undefined && p.goals2 !== "") ? parseInt(p.goals2) : null;
-    if (g1 !== null && g2 !== null && !isNaN(g1) && !isNaN(g2) && !p.outcome) playerPicks[mid].outcome = g1 > g2 ? "1" : g1 < g2 ? "2" : "x";
+    const { g1, g2, hasPrediction } = resolveGoals(p);
+    if (hasPrediction && !p.outcome) {
+      playerPicks[mid].outcome = g1 > g2 ? "1" : g1 < g2 ? "2" : "x";
+    }
+    // Guardar los goles resueltos (null → 0 si el otro tiene valor)
+    if (hasPrediction) {
+      playerPicks[mid].goals1 = g1;
+      playerPicks[mid].goals2 = g2;
+    }
   });
+
   const saveable = allMatchIds.filter(mid => {
     const m = ALL_MATCHES.find(x => x.id === mid); const p = playerPicks[mid];
     return m && !isMatchLocked(m.kickoff) && !cachedResults[mid] && p && p.outcome;
@@ -369,11 +405,11 @@ function renderMisPuntos() {
         const r = cachedResults[m.id], p = playerPicks[m.id];
         const pts = calcPoints(p, r);
         const f1=FLAGS[m.team1]||"🏳", f2=FLAGS[m.team2]||"🏳";
-        const hasPred = p.goals1!=null && p.goals2!=null && p.goals1!=="" && p.goals2!=="";
+        const { g1, g2, hasPrediction } = resolveGoals(p);
         let pronostico = "";
-        if (hasPred) pronostico = `${p.goals1}–${p.goals2}`;
-        else if (p.outcome==="1") pronostico=`Gana ${m.team1}`;
-        else if (p.outcome==="2") pronostico=`Gana ${m.team2}`;
+        if (hasPrediction) pronostico = g1+"–"+g2;
+        else if (p.outcome==="1") pronostico="Gana "+m.team1;
+        else if (p.outcome==="2") pronostico="Gana "+m.team2;
         else if (p.outcome==="x") pronostico="Empate";
         return `<div class="historial-row ${pts>0?'ok':'fail'}">
           <span class="historial-icon">${pts>0?'✅':'❌'}</span>
@@ -439,17 +475,15 @@ function renderAdminMatchCard(m) {
     </div>`;
 }
 
-// ── Resetear resultado de un partido ─────────────────────
 async function resetResult(matchId) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
   const name = m ? `${m.team1} vs ${m.team2}` : matchId;
-  if (!confirm(`¿Resetear el resultado de ${name}?\n\nSe borrará el marcador y los jugadores podrán volver a pronosticar (si el partido no ha iniciado).`)) return;
+  if (!confirm(`¿Resetear el resultado de ${name}?\n\nSe borrará el marcador y los puntos serán recalculados.`)) return;
   setLoading("Reseteando resultado...");
   try {
     await DB.deleteResult(matchId);
     delete cachedResults[matchId];
     await recalcAllPoints();
-    // Re-render la tarjeta
     const card = document.getElementById("card-"+matchId);
     if (card && m) card.outerHTML = renderAdminMatchCard(m);
     else renderAdminMatches(adminPhase);
@@ -462,21 +496,18 @@ async function toggleMatch(matchId, currentlyEnabled) {
   try {
     if (currentlyEnabled) { await DB.disableMatch(matchId); delete cachedEnabled[matchId]; }
     else { await DB.enableMatch(matchId); cachedEnabled[matchId] = true; }
-    const m = ALL_MATCHES.find(x => x.id === matchId);
-    if (m) {
-      const cards = document.querySelectorAll(`#admin-matches-container .match-card`);
-      cards.forEach(card => {
-        const btn = card.querySelector(`[onclick*="'${matchId}'"]`);
-        if (btn && btn.classList.contains("btn-toggle")) {
-          const enabled = !!cachedEnabled[matchId];
-          btn.className = "btn-toggle " + (enabled ? "enabled" : "disabled");
-          btn.textContent = enabled ? "✅ Habilitado" : "🔴 Deshabilitado";
-          btn.setAttribute("onclick", `toggleMatch('${matchId}', ${enabled})`);
-          card.classList.toggle("match-enabled", enabled);
-          card.classList.toggle("match-disabled", !enabled);
-        }
-      });
-    }
+    const cards = document.querySelectorAll(`#admin-matches-container .match-card`);
+    cards.forEach(card => {
+      const btn = card.querySelector(`[onclick*="'${matchId}'"]`);
+      if (btn && btn.classList.contains("btn-toggle")) {
+        const enabled = !!cachedEnabled[matchId];
+        btn.className = "btn-toggle " + (enabled ? "enabled" : "disabled");
+        btn.textContent = enabled ? "✅ Habilitado" : "🔴 Deshabilitado";
+        btn.setAttribute("onclick", `toggleMatch('${matchId}', ${enabled})`);
+        card.classList.toggle("match-enabled", enabled);
+        card.classList.toggle("match-disabled", !enabled);
+      }
+    });
   } catch(e) { alert("Error: "+e.message); }
 }
 
