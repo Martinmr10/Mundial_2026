@@ -924,3 +924,33 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
   margin-left: 6px;
   vertical-align: middle;
 }
+/* ── VER PICKS BUTTON ─────────────────────────────────── */
+.btn-view-picks {
+  background: rgba(30,136,229,0.15);
+  border: 1px solid rgba(30,136,229,0.4);
+  cursor: pointer; font-size: 14px;
+  padding: 4px 8px; border-radius: 6px;
+  transition: all 0.2s; color: #42a5f5;
+}
+.btn-view-picks:hover { background: rgba(30,136,229,0.3); }
+
+/* ── LATE ACCESS BUTTON ───────────────────────────────── */
+.btn-late-access {
+  background: rgba(150,150,150,0.1);
+  border: 1px solid rgba(150,150,150,0.25);
+  border-radius: 20px; padding: 4px 10px;
+  font-size: 11px; font-weight: 600;
+  color: #8899bb; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-late-access:hover { border-color: #ffd600; color: #ffd600; }
+.btn-late-access.granted {
+  background: rgba(0,200,83,0.12);
+  border-color: rgba(0,200,83,0.4);
+  color: #00c853;
+}
+.btn-late-access.granted:hover {
+  background: rgba(229,57,53,0.12);
+  border-color: rgba(229,57,53,0.4);
+  color: #e53935;
+}
