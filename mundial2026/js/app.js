@@ -48,7 +48,10 @@ const DB = {
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   deleteResult:  (match_id)   => sbFetch("results?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
-  getLateAccess: ()       => sbFetch("late_access?select=*"),
+  getLateAccess: async () => {
+    try { return await sbFetch("late_access?select=*"); }
+    catch(e) { console.warn("late_access table missing:", e.message); return []; }
+  },
   grantLateAccess: (name) => sbFetch("late_access", { method:"POST", body: JSON.stringify({player_name: name}), headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   revokeLateAccess:(name) => sbFetch("late_access?player_name=eq."+encodeURIComponent(name), { method:"DELETE", prefer:"return=minimal" }),
 
@@ -84,6 +87,9 @@ function showScreen(id) {
   if (id === "screen-login") { 
 // ── Ver picks de un jugador (admin) ──────────────────────
 async function viewPlayerPicks(playerName) {
+  // Make sure modal exists
+  const modal = document.getElementById("modal-picks");
+  if (!modal) { alert("Modal no encontrado — verifica que index.html esté actualizado."); return; }
   document.getElementById("modal-picks-title").textContent = "👁️ PICKS DE " + playerName.toUpperCase();
   document.getElementById("modal-picks-content").innerHTML = '<div class="empty-state">Cargando...</div>';
   document.getElementById("modal-picks").style.display = "flex";
@@ -167,7 +173,18 @@ async function toggleLateAccess(playerName, currentlyGranted) {
       lateAccessPlayers.add(playerName);
     }
     await renderAdminPlayers();
-  } catch(e) { alert("Error: " + e.message); }
+  } catch(e) {
+    if (e.message.includes("42P01") || e.message.includes("does not exist")) {
+      alert("⚠️ Falta crear la tabla en Supabase. Ve al SQL Editor y ejecuta:
+
+CREATE TABLE late_access (
+  player_name text primary key
+);
+ALTER TABLE late_access DISABLE ROW LEVEL SECURITY;");
+    } else {
+      alert("Error: " + e.message);
+    }
+  }
 }
 
 populateLoginDropdown(); document.getElementById("login-pin").value = ""; }
