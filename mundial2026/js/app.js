@@ -48,7 +48,16 @@ const DB = {
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   deleteResult:  (match_id)   => sbFetch("results?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
-  getLateAccess: ()       => sbFetch("late_access?select=*&expires_at=gt."+new Date().toISOString()),
+  getLateAccess: async () => {
+    try {
+      // Intentar con filtro de expiración (si la columna existe)
+      return await sbFetch("late_access?select=*&expires_at=gt."+new Date().toISOString());
+    } catch(e) {
+      // Si la columna expires_at no existe aún, traer todos sin filtro
+      try { return await sbFetch("late_access?select=*"); }
+      catch(e2) { console.warn("late_access missing:", e2.message); return []; }
+    }
+  },
   grantLateAccess: (name) => {
     const expires_at = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutos
     return sbFetch("late_access", { method:"POST", body: JSON.stringify({player_name: name, expires_at}), headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} });
