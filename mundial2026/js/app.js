@@ -650,8 +650,10 @@ async function saveEditPlayer() {
   if(!/^\d+$/.test(newPin)){alert("El PIN debe ser solo números.");return;}
   setLoading("Actualizando jugador...");
   try {
-    if(oldName!==newName)await DB.updatePickPlayerName(oldName,newName);
+    // Primero actualizar el jugador en players, LUEGO actualizar picks
+    // (el FK de picks referencia players.name)
     await DB.updatePlayer(oldName,newName,newPin);
+    if(oldName!==newName)await DB.updatePickPlayerName(oldName,newName);
     closeEditModal();
     await renderAdminPlayers();
     await populateLoginDropdown();
