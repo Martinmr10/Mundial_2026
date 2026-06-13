@@ -33,7 +33,7 @@ const DB = {
   getPicksByPlayer: (name)    => sbFetch("picks?player_name=eq."+encodeURIComponent(name)+"&select=*"),
   getAllPicks:    ()           => sbFetch("picks?select=*"),
   upsertPick:    (player_name, match_id, outcome, goals1, goals2) =>
-    sbFetch("picks?on_conflict=player_name,match_id", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2}),
+    sbFetch("picks", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   updatePickPlayerName: (oldName, newName) =>
     sbFetch("picks?player_name=eq."+encodeURIComponent(oldName), { method:"PATCH", body: JSON.stringify({player_name: newName}), prefer:"return=minimal" }),
@@ -48,8 +48,11 @@ const DB = {
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   deleteResult:  (match_id)   => sbFetch("results?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
-  getLateAccess: ()       => sbFetch("late_access?select=*"),
-  grantLateAccess: (name) => sbFetch("late_access", { method:"POST", body: JSON.stringify({player_name: name}), headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
+  getLateAccess: ()       => sbFetch("late_access?select=*&expires_at=gt."+new Date().toISOString()),
+  grantLateAccess: (name) => {
+    const expires_at = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutos
+    return sbFetch("late_access", { method:"POST", body: JSON.stringify({player_name: name, expires_at}), headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} });
+  },
   revokeLateAccess:(name) => sbFetch("late_access?player_name=eq."+encodeURIComponent(name), { method:"DELETE", prefer:"return=minimal" }),
 
   getSettings: async () => {
@@ -76,76 +79,62 @@ let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, wcApiKey:"" };
 let playerPicks   = {};
 let cachedResults = {};
 let cachedEnabled = {};
-let lateAccessPlayers = new Set(); // jugadores con permiso especial para pronosticar tarde
+let lateAccessPlayers = new Map(); // jugadores con permiso especial { name -> expires_at }
 
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById(id).classList.add("active");
-  if (id === "screen-login") { 
+  if (id === "screen-login") {
+    populateLoginDropdown();
+    document.getElementById("login-pin").value = "";
+  }
+}
+
 // ── Ver picks de un jugador (admin) ──────────────────────
 async function viewPlayerPicks(playerName) {
+  const modal = document.getElementById("modal-picks");
+  if (!modal) { alert("Falta el modal en index.html"); return; }
   document.getElementById("modal-picks-title").textContent = "👁️ PICKS DE " + playerName.toUpperCase();
   document.getElementById("modal-picks-content").innerHTML = '<div class="empty-state">Cargando...</div>';
-  document.getElementById("modal-picks").style.display = "flex";
+  modal.style.display = "flex";
   try {
-    const [picksRows, resultsRows] = await Promise.all([
-      DB.getPicksByPlayer(playerName),
-      DB.getResults()
-    ]);
+    const [picksRows, resultsRows] = await Promise.all([DB.getPicksByPlayer(playerName), DB.getResults()]);
     const picksMap = {};
     (picksRows||[]).forEach(r => { picksMap[r.match_id] = r; });
     const resultsMap = {};
     (resultsRows||[]).forEach(r => { resultsMap[r.match_id] = r; });
-
-    // Solo mostrar partidos con pick o con resultado
     const relevant = ALL_MATCHES.filter(m => picksMap[m.id] || resultsMap[m.id]);
-
     if (!relevant.length) {
       document.getElementById("modal-picks-content").innerHTML = '<div class="empty-state">Este jugador no tiene picks aún.</div>';
       return;
     }
-
     const html = relevant.map(m => {
       const pick = picksMap[m.id];
       const result = resultsMap[m.id];
       const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
       const hasResult = result && result.score1 !== undefined;
-
-      let pickText = "⚪ Sin pronóstico";
-      let pickColor = "#8899bb";
-      let pts = 0;
-
+      let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0;
       if (pick) {
         const { g1, g2, hasPrediction } = resolveGoals(pick);
-        if (hasPrediction) pickText = `${g1}–${g2}`;
-        else if (pick.outcome === "1") pickText = `Gana ${m.team1}`;
-        else if (pick.outcome === "2") pickText = `Gana ${m.team2}`;
+        if (hasPrediction) pickText = g1+"–"+g2;
+        else if (pick.outcome === "1") pickText = "Gana "+m.team1;
+        else if (pick.outcome === "2") pickText = "Gana "+m.team2;
         else if (pick.outcome === "x") pickText = "Empate";
-
-        if (hasResult) {
-          pts = calcPoints(pick, result);
-          pickColor = pts > 0 ? "#00c853" : "#e53935";
-        } else {
-          pickColor = "#ffd600";
-        }
+        if (hasResult) { pts = calcPoints(pick, result); pickColor = pts > 0 ? "#00c853" : "#e53935"; }
+        else pickColor = "#ffd600";
       }
-
-      return `
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;color:#8899bb;margin-bottom:2px;">${m.group}</div>
-            <div style="font-size:13px;font-weight:500;color:#f0f4ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-              ${f1} ${m.team1} vs ${m.team2} ${f2}
-            </div>
-            ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ''}
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div style="font-size:13px;font-weight:600;color:${pickColor};">${pickText}</div>
-            ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts:''} pts</div>` : ''}
-          </div>
-        </div>`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.group}</div>
+          <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
+          ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ""}
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:13px;font-weight:600;color:${pickColor};">${pickText}</div>
+          ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
+        </div>
+      </div>`;
     }).join("");
-
     document.getElementById("modal-picks-content").innerHTML = html;
   } catch(e) {
     document.getElementById("modal-picks-content").innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
@@ -163,14 +152,18 @@ async function toggleLateAccess(playerName, currentlyGranted) {
       await DB.revokeLateAccess(playerName);
       lateAccessPlayers.delete(playerName);
     } else {
+      const expires_at = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       await DB.grantLateAccess(playerName);
-      lateAccessPlayers.add(playerName);
+      lateAccessPlayers.set(playerName, expires_at);
+      // Auto-remover del mapa al expirar
+      setTimeout(async () => {
+        lateAccessPlayers.delete(playerName);
+        await DB.revokeLateAccess(playerName);
+        await renderAdminPlayers();
+      }, 5 * 60 * 1000);
     }
     await renderAdminPlayers();
   } catch(e) { alert("Error: " + e.message); }
-}
-
-populateLoginDropdown(); document.getElementById("login-pin").value = ""; }
 }
 function showAdminLogin() { showScreen("screen-admin-login"); }
 function setLoading(msg) { document.getElementById("loading-overlay").style.display="flex"; document.getElementById("loading-msg").textContent = msg||"Cargando..."; }
@@ -180,8 +173,12 @@ function getOutcome(s1, s2) { return s1>s2?"1":s1<s2?"2":"x"; }
 
 // Verifica si el partido está bloqueado para un jugador específico
 function isLockedForPlayer(m, hasResult, playerName) {
-  if (hasResult) return true; // si ya hay resultado siempre bloqueado
-  if (isMatchLocked(m.kickoff) && !lateAccessPlayers.has(playerName)) return true;
+  if (hasResult) return true;
+  if (isMatchLocked(m.kickoff)) {
+    const expiry = lateAccessPlayers.get(playerName);
+    const hasValidAccess = expiry && Date.now() < new Date(expiry).getTime();
+    if (!hasValidAccess) return true;
+  }
   return false;
 }
 
@@ -262,7 +259,7 @@ async function handleLogin() {
     (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
-    lateAccessPlayers = new Set((lateRows||[]).map(r => r.player_name));
+    lateAccessPlayers = new Map((lateRows||[]).map(r => [r.player_name, r.expires_at]));
     renderPhaseSelector("phase-selector", currentPhase, false);
     renderPlayerMatches(currentPhase);
     renderMisPuntos();
@@ -286,7 +283,7 @@ async function handleAdminLogin() {
     (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
-    lateAccessPlayers = new Set((lateRows||[]).map(r => r.player_name));
+    lateAccessPlayers = new Map((lateRows||[]).map(r => [r.player_name, r.expires_at]));
     adminPhase = "grupos";
     renderPhaseSelector("admin-phase-selector", adminPhase, true);
     renderAdminMatches(adminPhase);
@@ -469,7 +466,9 @@ async function savePlayerPicks() {
 
   const saveable = allMatchIds.filter(mid => {
     const m = ALL_MATCHES.find(x => x.id === mid); const p = playerPicks[mid];
-    return m && !cachedResults[mid] && (!isMatchLocked(m.kickoff) || lateAccessPlayers.has(currentPlayer)) && p && p.outcome;
+    const expiry = lateAccessPlayers.get(currentPlayer);
+    const hasValidAccess = expiry && Date.now() < new Date(expiry).getTime();
+    return m && !cachedResults[mid] && (!isMatchLocked(m.kickoff) || hasValidAccess) && p && p.outcome;
   });
   const blocked = allMatchIds.length - saveable.length;
   if (!saveable.length) { el.textContent="🔒 Todos los partidos ya iniciaron"; el.className="save-status"; setTimeout(()=>{el.textContent=""; el.className="save-status";},4000); return; }
@@ -712,7 +711,9 @@ async function renderAdminPlayers() {
     container.innerHTML = players.map((p,i) => {
       const myPicks = allPicks.filter(pk => pk.player_name===p.name);
       const correct = myPicks.filter(pk => { const r=resultsRows.find(r=>r.match_id===pk.match_id); return r && calcPoints({outcome:pk.outcome,goals1:pk.goals1,goals2:pk.goals2},r)>0; }).length;
-      const hasLateAccess = lateAccessPlayers.has(p.name);
+      const lateExpiry = lateAccessPlayers.get(p.name);
+      const hasLateAccess = !!lateExpiry && Date.now() < new Date(lateExpiry).getTime();
+      const lateMinLeft = hasLateAccess ? Math.ceil((new Date(lateExpiry).getTime()-Date.now())/60000) : 0;
       return `<div class="player-card">
         <div class="player-header">
           <span class="player-medal">${medals[i]||(i+1)}</span>
@@ -729,7 +730,7 @@ async function renderAdminPlayers() {
           <button class="btn-late-access ${hasLateAccess ? 'granted' : ''}"
             onclick="toggleLateAccess('${p.name}', ${hasLateAccess})"
             title="${hasLateAccess ? 'Quitar permiso especial' : 'Dar permiso para pronosticar tarde'}">
-            ${hasLateAccess ? '🔓 Permiso activo' : '🔒 Sin permiso especial'}
+            ${hasLateAccess ? `🔓 Permiso activo (${lateMinLeft} min)` : '🔒 Sin permiso especial'}
           </button>
         </div>
       </div>`;
