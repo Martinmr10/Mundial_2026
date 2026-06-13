@@ -48,6 +48,10 @@ const DB = {
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   deleteResult:  (match_id)   => sbFetch("results?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
+  getLateAccess: ()       => sbFetch("late_access?select=*"),
+  grantLateAccess: (name) => sbFetch("late_access", { method:"POST", body: JSON.stringify({player_name: name}), headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
+  revokeLateAccess:(name) => sbFetch("late_access?player_name=eq."+encodeURIComponent(name), { method:"DELETE", prefer:"return=minimal" }),
+
   getSettings: async () => {
     const rows = await sbFetch("settings?select=*");
     const s = {};
@@ -72,17 +76,114 @@ let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, wcApiKey:"" };
 let playerPicks   = {};
 let cachedResults = {};
 let cachedEnabled = {};
+let lateAccessPlayers = new Set(); // jugadores con permiso especial para pronosticar tarde
 
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById(id).classList.add("active");
-  if (id === "screen-login") { populateLoginDropdown(); document.getElementById("login-pin").value = ""; }
+  if (id === "screen-login") { 
+// ── Ver picks de un jugador (admin) ──────────────────────
+async function viewPlayerPicks(playerName) {
+  document.getElementById("modal-picks-title").textContent = "👁️ PICKS DE " + playerName.toUpperCase();
+  document.getElementById("modal-picks-content").innerHTML = '<div class="empty-state">Cargando...</div>';
+  document.getElementById("modal-picks").style.display = "flex";
+  try {
+    const [picksRows, resultsRows] = await Promise.all([
+      DB.getPicksByPlayer(playerName),
+      DB.getResults()
+    ]);
+    const picksMap = {};
+    (picksRows||[]).forEach(r => { picksMap[r.match_id] = r; });
+    const resultsMap = {};
+    (resultsRows||[]).forEach(r => { resultsMap[r.match_id] = r; });
+
+    // Solo mostrar partidos con pick o con resultado
+    const relevant = ALL_MATCHES.filter(m => picksMap[m.id] || resultsMap[m.id]);
+
+    if (!relevant.length) {
+      document.getElementById("modal-picks-content").innerHTML = '<div class="empty-state">Este jugador no tiene picks aún.</div>';
+      return;
+    }
+
+    const html = relevant.map(m => {
+      const pick = picksMap[m.id];
+      const result = resultsMap[m.id];
+      const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
+      const hasResult = result && result.score1 !== undefined;
+
+      let pickText = "⚪ Sin pronóstico";
+      let pickColor = "#8899bb";
+      let pts = 0;
+
+      if (pick) {
+        const { g1, g2, hasPrediction } = resolveGoals(pick);
+        if (hasPrediction) pickText = `${g1}–${g2}`;
+        else if (pick.outcome === "1") pickText = `Gana ${m.team1}`;
+        else if (pick.outcome === "2") pickText = `Gana ${m.team2}`;
+        else if (pick.outcome === "x") pickText = "Empate";
+
+        if (hasResult) {
+          pts = calcPoints(pick, result);
+          pickColor = pts > 0 ? "#00c853" : "#e53935";
+        } else {
+          pickColor = "#ffd600";
+        }
+      }
+
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;color:#8899bb;margin-bottom:2px;">${m.group}</div>
+            <div style="font-size:13px;font-weight:500;color:#f0f4ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${f1} ${m.team1} vs ${m.team2} ${f2}
+            </div>
+            ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ''}
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:13px;font-weight:600;color:${pickColor};">${pickText}</div>
+            ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts:''} pts</div>` : ''}
+          </div>
+        </div>`;
+    }).join("");
+
+    document.getElementById("modal-picks-content").innerHTML = html;
+  } catch(e) {
+    document.getElementById("modal-picks-content").innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function closePicksModal() {
+  document.getElementById("modal-picks").style.display = "none";
+}
+
+// ── Permiso especial para pronosticar tarde ───────────────
+async function toggleLateAccess(playerName, currentlyGranted) {
+  try {
+    if (currentlyGranted) {
+      await DB.revokeLateAccess(playerName);
+      lateAccessPlayers.delete(playerName);
+    } else {
+      await DB.grantLateAccess(playerName);
+      lateAccessPlayers.add(playerName);
+    }
+    await renderAdminPlayers();
+  } catch(e) { alert("Error: " + e.message); }
+}
+
+populateLoginDropdown(); document.getElementById("login-pin").value = ""; }
 }
 function showAdminLogin() { showScreen("screen-admin-login"); }
 function setLoading(msg) { document.getElementById("loading-overlay").style.display="flex"; document.getElementById("loading-msg").textContent = msg||"Cargando..."; }
 function hideLoading()   { document.getElementById("loading-overlay").style.display="none"; }
 
 function getOutcome(s1, s2) { return s1>s2?"1":s1<s2?"2":"x"; }
+
+// Verifica si el partido está bloqueado para un jugador específico
+function isLockedForPlayer(m, hasResult, playerName) {
+  if (hasResult) return true; // si ya hay resultado siempre bloqueado
+  if (isMatchLocked(m.kickoff) && !lateAccessPlayers.has(playerName)) return true;
+  return false;
+}
 
 // ── HELPER: normalizar goles (null/vacío = 0) ─────────────
 function parseGoal(val) {
@@ -156,11 +257,12 @@ async function handleLogin() {
     const myPicksRows = await DB.getPicksByPlayer(name);
     playerPicks = {};
     (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2 }; });
-    const [resultsRows, enabledRows] = await Promise.all([DB.getResults(), DB.getEnabled()]);
+    const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
     (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
+    lateAccessPlayers = new Set((lateRows||[]).map(r => r.player_name));
     renderPhaseSelector("phase-selector", currentPhase, false);
     renderPlayerMatches(currentPhase);
     renderMisPuntos();
@@ -179,11 +281,12 @@ async function handleAdminLogin() {
     document.getElementById("pts-partial").value = settings.ptsPartial;
     document.getElementById("pts-exact").value   = settings.ptsExact;
     document.getElementById("wc-api-key").value  = settings.wcApiKey;
-    const [resultsRows, enabledRows] = await Promise.all([DB.getResults(), DB.getEnabled()]);
+    const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
     (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
+    lateAccessPlayers = new Set((lateRows||[]).map(r => r.player_name));
     adminPhase = "grupos";
     renderPhaseSelector("admin-phase-selector", adminPhase, true);
     renderAdminMatches(adminPhase);
@@ -227,7 +330,7 @@ function renderMatchCard(m, result) {
   const pick = playerPicks[m.id] || {};
   const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
   const hasResult = result && result.score1 !== undefined;
-  const locked = isMatchLocked(m.kickoff) || hasResult;
+  const locked = isLockedForPlayer(m, hasResult, currentPlayer);
   const pts = hasResult && pick.outcome ? calcPoints(pick, result) : null;
   const pickClass = v => {
     if (pick.outcome!==v) return "";
@@ -289,7 +392,7 @@ function getResultLabel(pick, result) {
 
 function setPick(matchId, outcome) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
+  if (m && isLockedForPlayer(m, !!cachedResults[matchId], currentPlayer)) return;
   if (!playerPicks[matchId]) playerPicks[matchId] = {};
   playerPicks[matchId].outcome = outcome;
   const g1 = playerPicks[matchId].goals1;
@@ -314,7 +417,7 @@ function setPick(matchId, outcome) {
 
 function setGoals(matchId) {
   const m = ALL_MATCHES.find(x => x.id === matchId);
-  if (m && (isMatchLocked(m.kickoff) || cachedResults[matchId])) return;
+  if (m && isLockedForPlayer(m, !!cachedResults[matchId], currentPlayer)) return;
   const g1val = document.getElementById("g1-"+matchId)?.value;
   const g2val = document.getElementById("g2-"+matchId)?.value;
   const g1 = g1val !== "" && g1val !== undefined ? parseInt(g1val) : null;
@@ -366,7 +469,7 @@ async function savePlayerPicks() {
 
   const saveable = allMatchIds.filter(mid => {
     const m = ALL_MATCHES.find(x => x.id === mid); const p = playerPicks[mid];
-    return m && !isMatchLocked(m.kickoff) && !cachedResults[mid] && p && p.outcome;
+    return m && !cachedResults[mid] && (!isMatchLocked(m.kickoff) || lateAccessPlayers.has(currentPlayer)) && p && p.outcome;
   });
   const blocked = allMatchIds.length - saveable.length;
   if (!saveable.length) { el.textContent="🔒 Todos los partidos ya iniciaron"; el.className="save-status"; setTimeout(()=>{el.textContent=""; el.className="save-status";},4000); return; }
@@ -609,11 +712,13 @@ async function renderAdminPlayers() {
     container.innerHTML = players.map((p,i) => {
       const myPicks = allPicks.filter(pk => pk.player_name===p.name);
       const correct = myPicks.filter(pk => { const r=resultsRows.find(r=>r.match_id===pk.match_id); return r && calcPoints({outcome:pk.outcome,goals1:pk.goals1,goals2:pk.goals2},r)>0; }).length;
+      const hasLateAccess = lateAccessPlayers.has(p.name);
       return `<div class="player-card">
         <div class="player-header">
           <span class="player-medal">${medals[i]||(i+1)}</span>
           <span class="player-name">${p.name}</span>
           <span class="player-pts">${p.points} pts</span>
+          <button class="btn-view-picks" onclick="viewPlayerPicks('${p.name}')" title="Ver picks">👁️</button>
           <button class="btn-edit" onclick="openEditModal('${p.name}','${p.pin}')" title="Editar">✏️</button>
           <button class="btn-delete" onclick="deletePlayer('${p.name}')" title="Eliminar">🗑</button>
         </div>
@@ -621,6 +726,11 @@ async function renderAdminPlayers() {
           <span>PIN: <span class="player-pin">${p.pin}</span></span>
           <span>Picks: ${myPicks.length}/${ALL_MATCHES.length}</span>
           <span>Aciertos: ${correct}</span>
+          <button class="btn-late-access ${hasLateAccess ? 'granted' : ''}"
+            onclick="toggleLateAccess('${p.name}', ${hasLateAccess})"
+            title="${hasLateAccess ? 'Quitar permiso especial' : 'Dar permiso para pronosticar tarde'}">
+            ${hasLateAccess ? '🔓 Permiso activo' : '🔒 Sin permiso especial'}
+          </button>
         </div>
       </div>`;
     }).join("");
