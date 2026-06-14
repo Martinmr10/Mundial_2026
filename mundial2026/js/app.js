@@ -33,7 +33,7 @@ const DB = {
   getPicksByPlayer: (name)    => sbFetch("picks?player_name=eq."+encodeURIComponent(name)+"&select=*"),
   getAllPicks:    ()           => sbFetch("picks?select=*"),
   upsertPick:    (player_name, match_id, outcome, goals1, goals2) =>
-    sbFetch("picks", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2}),
+    sbFetch("picks?on_conflict=player_name,match_id", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   updatePickPlayerName: (oldName, newName) =>
     sbFetch("picks?player_name=eq."+encodeURIComponent(oldName), { method:"PATCH", body: JSON.stringify({player_name: newName}), prefer:"return=minimal" }),
@@ -262,7 +262,7 @@ async function handleLogin() {
     settings = await DB.getSettings();
     const myPicksRows = await DB.getPicksByPlayer(name);
     playerPicks = {};
-    (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2 }; });
+    (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, _saved:true }; });
     const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
     (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
@@ -481,15 +481,20 @@ async function savePlayerPicks() {
   });
   const blocked = allMatchIds.length - saveable.length;
   if (!saveable.length) { el.textContent="🔒 Todos los partidos ya iniciaron"; el.className="save-status"; setTimeout(()=>{el.textContent=""; el.className="save-status";},4000); return; }
+  const isModifying = saveable.some(mid => playerPicks[mid]?._saved);
   el.textContent = "Guardando..."; el.className = "save-status";
   try {
     await Promise.all(saveable.map(mid => { const p = playerPicks[mid]; return DB.upsertPick(currentPlayer, mid, p.outcome||null, p.goals1??null, p.goals2??null); }));
     await recalcPointsForPlayer(currentPlayer);
-    const msg = blocked > 0 ? `✅ Guardados ${saveable.length} picks (${blocked} bloqueado${blocked>1?'s':''})` : `✅ Picks guardados correctamente`;
+    // Marcar todos como guardados para futuras modificaciones
+    saveable.forEach(mid => { if (playerPicks[mid]) playerPicks[mid]._saved = true; });
+    let msg;
+    if (blocked > 0) msg = `✅ Guardados ${saveable.length} picks (${blocked} bloqueado${blocked>1?'s':''})`;
+    else if (isModifying) msg = "✅ Picks modificados correctamente";
+    else msg = "✅ Picks guardados correctamente";
     el.textContent = msg; el.className = "save-status ok";
   } catch(e) {
-    if (e.message.includes("23505") || e.message.includes("duplicate") || e.message.includes("409")) { el.textContent="✅ Picks ya fueron guardados anteriormente"; el.className="save-status ok"; }
-    else { el.textContent="❌ Error: "+e.message; }
+    el.textContent = "❌ Error: "+e.message;
   }
   setTimeout(()=>{el.textContent=""; el.className="save-status";},3500);
 }
