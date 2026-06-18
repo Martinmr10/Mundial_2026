@@ -1006,3 +1006,22 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
 }
 .ranking-me { border-color: #00c853; background: rgba(0,200,83,0.08); }
 .me-tag { font-size: 11px; color: #00c853; }
+/* ── FILTRO DE PICKS (modal admin) ─────────────────────── */
+.picks-filter-row {
+  display: flex; gap: 6px; margin-bottom: 14px;
+  position: sticky; top: 0;
+  background: #0f1829; padding: 4px 0; z-index: 2;
+}
+.picks-filter-btn {
+  flex: 1; padding: 7px 4px;
+  background: rgba(150,150,150,0.1);
+  border: 1px solid rgba(150,150,150,0.25);
+  border-radius: 8px;
+  color: #8899bb; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+.picks-filter-btn:hover { border-color: #ffd600; color: #ffd600; }
+.picks-filter-btn.active {
+  background: rgba(255,214,0,0.15);
+  border-color: #ffd600; color: #ffd600;
+}
