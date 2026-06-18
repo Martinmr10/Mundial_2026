@@ -100,6 +100,8 @@ function showScreen(id) {
 }
 
 // ── Ver picks de un jugador (admin) ──────────────────────
+let _picksModalData = { playerName:null, picksMap:{}, resultsMap:{}, filter:"todos" };
+
 async function viewPlayerPicks(playerName) {
   const modal = document.getElementById("modal-picks");
   if (!modal) { alert("Falta el modal en index.html"); return; }
@@ -112,42 +114,76 @@ async function viewPlayerPicks(playerName) {
     (picksRows||[]).forEach(r => { picksMap[r.match_id] = r; });
     const resultsMap = {};
     (resultsRows||[]).forEach(r => { resultsMap[r.match_id] = r; });
-    const relevant = ALL_MATCHES.filter(m => picksMap[m.id] || resultsMap[m.id]);
-    if (!relevant.length) {
-      document.getElementById("modal-picks-content").innerHTML = '<div class="empty-state">Este jugador no tiene picks aún.</div>';
-      return;
-    }
-    const html = relevant.map(m => {
-      const pick = picksMap[m.id];
-      const result = resultsMap[m.id];
-      const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
-      const hasResult = result && result.score1 !== undefined;
-      let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0;
-      if (pick) {
-        const { g1, g2, hasPrediction } = resolveGoals(pick);
-        if (hasPrediction) pickText = g1+"–"+g2;
-        else if (pick.outcome === "1") pickText = "Gana "+m.team1;
-        else if (pick.outcome === "2") pickText = "Gana "+m.team2;
-        else if (pick.outcome === "x") pickText = "Empate";
-        if (hasResult) { pts = calcPoints(pick, result); pickColor = pts > 0 ? "#00c853" : "#e53935"; }
-        else pickColor = "#ffd600";
-      }
-      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.group}</div>
-          <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
-          ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ""}
-        </div>
-        <div style="text-align:right;flex-shrink:0;">
-          <div style="font-size:13px;font-weight:600;color:${pickColor};">${pickText}</div>
-          ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
-        </div>
-      </div>`;
-    }).join("");
-    document.getElementById("modal-picks-content").innerHTML = html;
+    _picksModalData = { playerName, picksMap, resultsMap, filter:"todos" };
+    renderPicksModalContent();
   } catch(e) {
     document.getElementById("modal-picks-content").innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
   }
+}
+
+function setPicksFilter(filter) {
+  _picksModalData.filter = filter;
+  renderPicksModalContent();
+}
+
+function renderPicksModalContent() {
+  const { picksMap, resultsMap, filter } = _picksModalData;
+
+  // Filtrar según el botón seleccionado
+  let matches = ALL_MATCHES.filter(m => picksMap[m.id] || resultsMap[m.id]);
+  if (filter === "habilitados") {
+    // Partidos habilitados que aún NO tienen resultado
+    matches = matches.filter(m => cachedEnabled[m.id] && !(resultsMap[m.id] && resultsMap[m.id].score1 !== undefined));
+  } else if (filter === "jugados") {
+    // Partidos que ya tienen resultado
+    matches = matches.filter(m => resultsMap[m.id] && resultsMap[m.id].score1 !== undefined);
+  }
+
+  // Ordenar por horario de juego
+  matches = matches.slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
+
+  // Botones de filtro
+  const filterBtns = `
+    <div class="picks-filter-row">
+      <button class="picks-filter-btn ${filter==='habilitados'?'active':''}" onclick="setPicksFilter('habilitados')">🔵 Habilitados</button>
+      <button class="picks-filter-btn ${filter==='jugados'?'active':''}" onclick="setPicksFilter('jugados')">⚪ Jugados</button>
+      <button class="picks-filter-btn ${filter==='todos'?'active':''}" onclick="setPicksFilter('todos')">📋 Todos</button>
+    </div>`;
+
+  if (!matches.length) {
+    document.getElementById("modal-picks-content").innerHTML = filterBtns + '<div class="empty-state">No hay partidos en este filtro.</div>';
+    return;
+  }
+
+  const rows = matches.map(m => {
+    const pick = picksMap[m.id];
+    const result = resultsMap[m.id];
+    const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
+    const hasResult = result && result.score1 !== undefined;
+    let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0;
+    if (pick) {
+      const { g1, g2, hasPrediction } = resolveGoals(pick);
+      if (hasPrediction) pickText = g1+"–"+g2;
+      else if (pick.outcome === "1") pickText = "Gana "+m.team1;
+      else if (pick.outcome === "2") pickText = "Gana "+m.team2;
+      else if (pick.outcome === "x") pickText = "Empate";
+      if (hasResult) { pts = calcPoints(pick, result); pickColor = pts > 0 ? "#00c853" : "#e53935"; }
+      else pickColor = "#ffd600";
+    }
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.kickoff ? formatKickoff(m.kickoff) : ""} · ${m.group}</div>
+        <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
+        ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ""}
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-size:13px;font-weight:600;color:${pickColor};">${pickText}</div>
+        ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("modal-picks-content").innerHTML = filterBtns + rows;
 }
 
 function closePicksModal() {
@@ -501,7 +537,8 @@ async function savePlayerPicks() {
 }
 
 function renderMisPuntos() {
-  const played  = ALL_MATCHES.filter(m => cachedResults[m.id] && playerPicks[m.id]?.outcome);
+  const played  = ALL_MATCHES.filter(m => cachedResults[m.id] && playerPicks[m.id]?.outcome)
+    .slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
   const correct = played.filter(m => calcPoints(playerPicks[m.id], cachedResults[m.id]) > 0);
   const pending = ALL_MATCHES.filter(m => !cachedResults[m.id] && playerPicks[m.id]);
   const total   = played.reduce((sum,m) => sum + calcPoints(playerPicks[m.id], cachedResults[m.id]), 0);
