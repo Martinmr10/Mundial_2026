@@ -416,7 +416,7 @@ function renderMatchCard(m, result) {
         <div class="pick-result-msg ${pts>0?'msg-ok':'msg-fail'}">
           ${pts>0 ? `✅ +${pts} punto${pts!==1?'s':''} — ${getResultLabel(pick,result)}` : '❌ Fallaste este partido'}
         </div>` : ""}
-      ${locked && !hasResult && pick.outcome ? `
+      ${(locked || hasResult) && pick.outcome ? `
         <div class="mi-pronostico">Tu pronóstico: ${pronosticoTexto(pick, m)}</div>` : ""}
     </div>`;
 }
