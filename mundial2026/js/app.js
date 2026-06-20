@@ -160,14 +160,18 @@ function renderPicksModalContent() {
     const result = resultsMap[m.id];
     const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
     const hasResult = result && result.score1 !== undefined;
-    let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0;
+    let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0, exacto = false;
     if (pick) {
       const { g1, g2, hasPrediction } = resolveGoals(pick);
       if (hasPrediction) pickText = g1+"–"+g2;
       else if (pick.outcome === "1") pickText = "Gana "+m.team1;
       else if (pick.outcome === "2") pickText = "Gana "+m.team2;
       else if (pick.outcome === "x") pickText = "Empate";
-      if (hasResult) { pts = calcPoints(pick, result); pickColor = pts > 0 ? "#00c853" : "#e53935"; }
+      if (hasResult) {
+        pts = calcPoints(pick, result);
+        pickColor = pts > 0 ? "#00c853" : "#e53935";
+        exacto = hasPrediction && g1===parseInt(result.score1) && g2===parseInt(result.score2);
+      }
       else pickColor = "#ffd600";
     }
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
@@ -177,7 +181,7 @@ function renderPicksModalContent() {
         ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ""}
       </div>
       <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:13px;font-weight:600;color:${pickColor};">${pickText}</div>
+        <div style="font-size:13px;font-weight:600;color:${pickColor};">${exacto?'⭐ ':''}${pickText}</div>
         ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
       </div>
     </div>`;
