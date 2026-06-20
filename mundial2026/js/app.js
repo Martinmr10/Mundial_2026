@@ -438,7 +438,7 @@ function getResultLabel(pick, result) {
   const wonCorrect = pick.outcome === actual;
   const g1ok = hasPrediction && g1 === s1;
   const g2ok = hasPrediction && g2 === s2;
-  if (hasPrediction && g1ok && g2ok)    return "🎯 ¡Marcador exacto!";
+  if (hasPrediction && g1ok && g2ok)    return "⭐ 🎯 ¡Marcador exacto!";
   if (wonCorrect && (g1ok || g2ok))     return "Acertaste ganador + goles marcados";
   if (!wonCorrect && (g1ok || g2ok))    return "Acertaste goles marcados";
   if (wonCorrect)                        return "Acertaste el ganador";
@@ -572,16 +572,18 @@ function renderMisPuntos() {
         const pts = calcPoints(p, r);
         const f1=FLAGS[m.team1]||"🏳", f2=FLAGS[m.team2]||"🏳";
         const { g1, g2, hasPrediction } = resolveGoals(p);
+        // ¿Marcador exacto? (ambos goles correctos)
+        const exacto = hasPrediction && g1===parseInt(r.score1) && g2===parseInt(r.score2);
         let pronostico = "";
         if (hasPrediction) pronostico = g1+"–"+g2;
         else if (p.outcome==="1") pronostico="Gana "+m.team1;
         else if (p.outcome==="2") pronostico="Gana "+m.team2;
         else if (p.outcome==="x") pronostico="Empate";
         return `<div class="historial-row ${pts>0?'ok':'fail'}">
-          <span class="historial-icon">${pts>0?'✅':'❌'}</span>
+          <span class="historial-icon">${exacto?'⭐':(pts>0?'✅':'❌')}</span>
           <div style="flex:1">
             <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}</div>
-            <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}</div>
+            <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}${exacto?' ⭐ ¡Exacto!':''}</div>
           </div>
           <span class="historial-pts">${pts>0?'+'+pts:'0'} pts</span>
         </div>`;
@@ -828,9 +830,6 @@ async function renderAdminPlayers() {
     container.innerHTML = players.map((p,i) => {
       const myPicks = allPicks.filter(pk => pk.player_name===p.name);
       const correct = myPicks.filter(pk => { const r=resultsRows.find(r=>r.match_id===pk.match_id); return r && calcPoints({outcome:pk.outcome,goals1:pk.goals1,goals2:pk.goals2},r)>0; }).length;
-      const lateExpiry = lateAccessPlayers.get(p.name);
-      const hasLateAccess = !!lateExpiry && Date.now() < new Date(lateExpiry).getTime();
-      const lateMinLeft = hasLateAccess ? Math.ceil((new Date(lateExpiry).getTime()-Date.now())/60000) : 0;
       return `<div class="player-card">
         <div class="player-header">
           <span class="player-medal">${medals[i]||(i+1)}</span>
@@ -844,11 +843,6 @@ async function renderAdminPlayers() {
           <span>PIN: <span class="player-pin">${p.pin}</span></span>
           <span>Picks: ${myPicks.length}/${ALL_MATCHES.length}</span>
           <span>Aciertos: ${correct}</span>
-          <button class="btn-late-access ${hasLateAccess ? 'granted' : ''}"
-            onclick="toggleLateAccess('${p.name}', ${hasLateAccess})"
-            title="${hasLateAccess ? 'Quitar permiso especial' : 'Dar permiso para pronosticar tarde'}">
-            ${hasLateAccess ? `🔓 Permiso activo (${lateMinLeft} min)` : '🔒 Sin permiso especial'}
-          </button>
         </div>
       </div>`;
     }).join("");
