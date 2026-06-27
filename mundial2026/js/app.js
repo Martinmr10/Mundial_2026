@@ -31,9 +31,9 @@ const DB = {
   updatePoints:  (name, pts)  => sbFetch("players?name=eq."+encodeURIComponent(name), { method:"PATCH", body: JSON.stringify({points:pts}), prefer:"return=minimal" }),
 
   getPicksByPlayer: (name)    => sbFetch("picks?player_name=eq."+encodeURIComponent(name)+"&select=*"),
-  getAllPicks:    ()           => sbFetch("picks?select=*"),
-  upsertPick:    (player_name, match_id, outcome, goals1, goals2) =>
-    sbFetch("picks?on_conflict=player_name,match_id", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2}),
+  getAllPicks:    ()           => sbFetch("picks?select=*&limit=100000"),
+  upsertPick:    (player_name, match_id, outcome, goals1, goals2, penales) =>
+    sbFetch("picks?on_conflict=player_name,match_id", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2, penales}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   updatePickPlayerName: (oldName, newName) =>
     sbFetch("picks?player_name=eq."+encodeURIComponent(oldName), { method:"PATCH", body: JSON.stringify({player_name: newName}), prefer:"return=minimal" }),
@@ -43,8 +43,8 @@ const DB = {
   disableMatch:  (match_id)   => sbFetch("enabled_matches?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
   getResults:    ()           => sbFetch("results?select=*"),
-  upsertResult:  (match_id, score1, score2) =>
-    sbFetch("results", { method:"POST", body: JSON.stringify({match_id, score1, score2, updated_at: new Date().toISOString()}),
+  upsertResult:  (match_id, score1, score2, penales) =>
+    sbFetch("results", { method:"POST", body: JSON.stringify({match_id, score1, score2, penales: penales ?? null, updated_at: new Date().toISOString()}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   deleteResult:  (match_id)   => sbFetch("results?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
@@ -72,6 +72,7 @@ const DB = {
       ptsWinner:  parseInt(s.pts_winner  ?? 1),
       ptsPartial: parseInt(s.pts_partial ?? 1),
       ptsExact:   parseInt(s.pts_exact   ?? 4),
+      ptsPenales: parseInt(s.pts_penales ?? 1),
       wcApiKey:   s.wc_api_key || "",
     };
   },
@@ -84,7 +85,7 @@ const DB = {
 let currentPlayer = null;
 let currentPhase  = "grupos";
 let adminPhase    = "grupos";
-let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, wcApiKey:"" };
+let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, ptsPenales:1, wcApiKey:"" };
 let playerPicks   = {};
 let cachedResults = {};
 let cachedEnabled = {};
@@ -178,7 +179,8 @@ function renderPicksModalContent() {
       <div style="flex:1;min-width:0;">
         <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.kickoff ? formatKickoff(m.kickoff) : ""} · ${m.group}</div>
         <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
-        ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}</div>` : ""}
+        ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}${result.penales ? ` · 🥅 Penales: ganó ${result.penales==='1'?m.team1:m.team2}` : ""}</div>` : ""}
+        ${(pick && isKnockout(m) && pick.outcome==='x' && pick.penales) ? `<div style="font-size:11px;color:#ffd600;">🥅 Su penal: gana ${pick.penales==='1'?m.team1:m.team2}</div>` : ""}
       </div>
       <div style="text-align:right;flex-shrink:0;">
         <div style="font-size:13px;font-weight:600;color:${pickColor};">${exacto?'⭐ ':''}${pickText}</div>
@@ -220,6 +222,9 @@ function hideLoading()   { document.getElementById("loading-overlay").style.disp
 
 function getOutcome(s1, s2) { return s1>s2?"1":s1<s2?"2":"x"; }
 
+// ¿Es partido de fase eliminatoria? (todo lo que no sea grupos)
+function isKnockout(m) { return m && m.phase && m.phase !== "grupos"; }
+
 // Verifica si el partido está bloqueado para un jugador específico
 function isLockedForPlayer(m, hasResult, playerName) {
   if (hasResult) return true;
@@ -260,8 +265,15 @@ function calcPoints(pick, result) {
   const actual = getOutcome(s1, s2);
   const wonCorrect = pick.outcome === actual;
 
-  // Marcador exacto: ambos goles correctos = 1 + 4 = 5 pts
-  if (hasPrediction && g1 === s1 && g2 === s2) return settings.ptsWinner + settings.ptsExact;
+  // Punto extra de penales: si el partido se fue a penales (result.penales),
+  // y el jugador acertó quién ganó la tanda (pick.penales), suma ptsPenales.
+  let bonusPenales = 0;
+  if (result.penales && pick && pick.penales && pick.penales === result.penales) {
+    bonusPenales = settings.ptsPenales;
+  }
+
+  // Marcador exacto: ambos goles correctos = 1 + 4 = 5 pts (+ penales si aplica)
+  if (hasPrediction && g1 === s1 && g2 === s2) return settings.ptsWinner + settings.ptsExact + bonusPenales;
 
   let pts = 0;
   if (wonCorrect) pts += settings.ptsWinner;
@@ -269,7 +281,7 @@ function calcPoints(pick, result) {
     if (g1 === s1) pts += settings.ptsPartial;
     if (g2 === s2) pts += settings.ptsPartial;
   }
-  return pts;
+  return pts + bonusPenales;
 }
 
 async function populateLoginDropdown() {
@@ -302,10 +314,10 @@ async function handleLogin() {
     settings = await DB.getSettings();
     const myPicksRows = await DB.getPicksByPlayer(name);
     playerPicks = {};
-    (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, _saved:true }; });
+    (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, penales:r.penales, _saved:true }; });
     const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
-    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
+    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2, penales:r.penales}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
     lateAccessPlayers = new Map((lateRows||[]).map(r => [r.player_name, r.expires_at]));
@@ -326,10 +338,11 @@ async function handleAdminLogin() {
     document.getElementById("pts-winner").value  = settings.ptsWinner;
     document.getElementById("pts-partial").value = settings.ptsPartial;
     document.getElementById("pts-exact").value   = settings.ptsExact;
+    const penInput = document.getElementById("pts-penales"); if (penInput) penInput.value = settings.ptsPenales;
     document.getElementById("wc-api-key").value  = settings.wcApiKey;
     const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
-    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2}; });
+    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2, penales:r.penales}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
     lateAccessPlayers = new Map((lateRows||[]).map(r => [r.player_name, r.expires_at]));
@@ -416,12 +429,20 @@ function renderMatchCard(m, result) {
           <span class="score-pred-team">${m.team2}</span>
         </div>
       </div>` : ""}
+      ${(!noPick && !locked && isKnockout(m) && pick.outcome === "x") ? `
+      <div class="penales-box">
+        <span class="penales-label">⚽ Empate → se van a penales. ¿Quién gana la tanda?</span>
+        <div class="penales-row">
+          <button class="penales-btn ${pick.penales==='1'?'selected':''}" onclick="setPenales('${m.id}','1')">🥅 Gana ${m.team1}</button>
+          <button class="penales-btn ${pick.penales==='2'?'selected':''}" onclick="setPenales('${m.id}','2')">🥅 Gana ${m.team2}</button>
+        </div>
+      </div>` : ""}
       ${hasResult && pick.outcome ? `
         <div class="pick-result-msg ${pts>0?'msg-ok':'msg-fail'}">
           ${pts>0 ? `✅ +${pts} punto${pts!==1?'s':''} — ${getResultLabel(pick,result)}` : '❌ Fallaste este partido'}
         </div>` : ""}
       ${(locked || hasResult) && pick.outcome ? `
-        <div class="mi-pronostico">Tu pronóstico: ${pronosticoTexto(pick, m)}</div>` : ""}
+        <div class="mi-pronostico">Tu pronóstico: ${pronosticoTexto(pick, m)}${(isKnockout(m) && pick.outcome==='x' && pick.penales) ? ` · Penales: gana ${pick.penales==='1'?m.team1:m.team2}` : ''}</div>` : ""}
     </div>`;
 }
 
@@ -442,10 +463,13 @@ function getResultLabel(pick, result) {
   const wonCorrect = pick.outcome === actual;
   const g1ok = hasPrediction && g1 === s1;
   const g2ok = hasPrediction && g2 === s2;
-  if (hasPrediction && g1ok && g2ok)    return "⭐ 🎯 ¡Marcador exacto!";
-  if (wonCorrect && (g1ok || g2ok))     return "Acertaste ganador + goles marcados";
-  if (!wonCorrect && (g1ok || g2ok))    return "Acertaste goles marcados";
-  if (wonCorrect)                        return "Acertaste el ganador";
+  const penalesOk = result.penales && pick.penales && pick.penales === result.penales;
+  const penalesTxt = penalesOk ? " + 🥅 penales" : "";
+  if (hasPrediction && g1ok && g2ok)    return "⭐ 🎯 ¡Marcador exacto!" + penalesTxt;
+  if (wonCorrect && (g1ok || g2ok))     return "Acertaste ganador + goles marcados" + penalesTxt;
+  if (!wonCorrect && (g1ok || g2ok))    return "Acertaste goles marcados" + penalesTxt;
+  if (wonCorrect)                        return "Acertaste el ganador" + penalesTxt;
+  if (penalesOk)                         return "Acertaste los penales 🥅";
   return "Acertaste";
 }
 
@@ -472,6 +496,19 @@ function setPick(matchId, outcome) {
     btn.classList.remove("selected","correct","wrong","auto-derived");
     if (onclick.includes("'"+outcome+"'")) btn.classList.add("selected");
   });
+  // Si dejó de ser empate, limpiar el ganador de penales
+  if (outcome !== "x" && playerPicks[matchId].penales) playerPicks[matchId].penales = null;
+  // Re-render para mostrar/ocultar botones de penales en eliminatorias
+  if (m && isKnockout(m)) renderPlayerMatches(currentPhase);
+}
+
+// Elegir quién gana la tanda de penales (solo eliminatorias, empate)
+function setPenales(matchId, who) {
+  const m = ALL_MATCHES.find(x => x.id === matchId);
+  if (m && isLockedForPlayer(m, !!cachedResults[matchId], currentPlayer)) return;
+  if (!playerPicks[matchId]) playerPicks[matchId] = {};
+  playerPicks[matchId].penales = who;
+  renderPlayerMatches(currentPhase);
 }
 
 function setGoals(matchId) {
@@ -505,6 +542,10 @@ function setGoals(matchId) {
       ["1","x","2"].forEach(v => { const btn = container.querySelector(`[onclick="setPick('${matchId}','${v}')"]`); if (btn) btn.classList.remove("selected","correct","wrong","auto-derived"); });
     }
   }
+  // Si dejó de ser empate, limpiar penales
+  if (playerPicks[matchId].outcome !== "x" && playerPicks[matchId].penales) playerPicks[matchId].penales = null;
+  // En eliminatorias, re-render para mostrar/ocultar botones de penales según empate
+  if (m && isKnockout(m)) renderPlayerMatches(currentPhase);
 }
 
 async function savePlayerPicks() {
@@ -537,7 +578,7 @@ async function savePlayerPicks() {
   const isModifying = saveable.some(mid => playerPicks[mid]?._saved);
   el.textContent = "Guardando..."; el.className = "save-status";
   try {
-    await Promise.all(saveable.map(mid => { const p = playerPicks[mid]; return DB.upsertPick(currentPlayer, mid, p.outcome||null, p.goals1??null, p.goals2??null); }));
+    await Promise.all(saveable.map(mid => { const p = playerPicks[mid]; const m = ALL_MATCHES.find(x=>x.id===mid); const pen = (isKnockout(m) && p.outcome==="x") ? (p.penales||null) : null; return DB.upsertPick(currentPlayer, mid, p.outcome||null, p.goals1??null, p.goals2??null, pen); }));
     await recalcPointsForPlayer(currentPlayer);
     // Marcar todos como guardados para futuras modificaciones
     saveable.forEach(mid => { if (playerPicks[mid]) playerPicks[mid]._saved = true; });
@@ -567,7 +608,7 @@ function renderMisPuntos() {
       <div class="stat-box"><div class="stat-num red">${played.length-correct.length}</div><div class="stat-label">Fallados</div></div>
       <div class="stat-box"><div class="stat-num muted">${pending.length}</div><div class="stat-label">Por jugar</div></div>
     </div>
-    <div class="mispuntos-note"><p>✅ Ganador: ${settings.ptsWinner}pt · Goles de un equipo: +${settings.ptsPartial}pt · Marcador exacto: ${settings.ptsExact}pts</p></div>
+    <div class="mispuntos-note"><p>✅ Ganador: ${settings.ptsWinner}pt · Goles de un equipo: +${settings.ptsPartial}pt · Marcador exacto: ${settings.ptsExact}pts · 🥅 Penales: +${settings.ptsPenales}pt</p></div>
     ${played.length ? `
     <div class="mispuntos-historial">
       <div class="group-label" style="padding:0 0 10px;">Historial de partidos</div>
@@ -697,6 +738,15 @@ function renderAdminMatchCard(m) {
         </div>
         <div class="admin-team right"><span class="tname">${m.team2}</span><span class="flag">${f2}</span></div>
       </div>
+      ${isKnockout(m) ? `
+      <div class="admin-penales-row">
+        <span class="admin-penales-label">Penales (si hubo empate):</span>
+        <select id="penales-${m.id}" class="admin-penales-select">
+          <option value="" ${!r.penales?'selected':''}>— Sin penales —</option>
+          <option value="1" ${r.penales==='1'?'selected':''}>Ganó ${m.team1}</option>
+          <option value="2" ${r.penales==='2'?'selected':''}>Ganó ${m.team2}</option>
+        </select>
+      </div>` : ""}
     </div>`;
 }
 
@@ -755,11 +805,16 @@ async function saveResults() {
       const s1=document.getElementById("score-"+m.id+"-1")?.value;
       const s2=document.getElementById("score-"+m.id+"-2")?.value;
       if (s1!==""&&s2!==""&&s1!==undefined&&s2!==undefined) {
-        toSave.push({match_id:m.id, score1:parseInt(s1), score2:parseInt(s2)});
-        cachedResults[m.id]={score1:parseInt(s1), score2:parseInt(s2)};
+        // Penales: solo si es eliminatoria y el marcador es empate
+        let pen = null;
+        if (isKnockout(m) && parseInt(s1) === parseInt(s2)) {
+          pen = document.getElementById("penales-"+m.id)?.value || null;
+        }
+        toSave.push({match_id:m.id, score1:parseInt(s1), score2:parseInt(s2), penales:pen});
+        cachedResults[m.id]={score1:parseInt(s1), score2:parseInt(s2), penales:pen};
       }
     });
-    await Promise.all(toSave.map(r => DB.upsertResult(r.match_id, r.score1, r.score2)));
+    await Promise.all(toSave.map(r => DB.upsertResult(r.match_id, r.score1, r.score2, r.penales)));
     await recalcAllPoints();
     alert("✅ "+toSave.length+" resultado(s) guardado(s).");
   } catch(e) { alert("❌ Error: "+e.message); }
@@ -806,7 +861,7 @@ function normTeam(name) {
 async function recalcPointsForPlayer(playerName) {
   const [resultsRows, myPicksRows] = await Promise.all([DB.getResults(), DB.getPicksByPlayer(playerName)]);
   const picksMap = {};
-  myPicksRows.forEach(r => { picksMap[r.match_id] = {outcome:r.outcome, goals1:r.goals1, goals2:r.goals2}; });
+  myPicksRows.forEach(r => { picksMap[r.match_id] = {outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, penales:r.penales}; });
   let pts = 0;
   resultsRows.forEach(r => { pts += calcPoints(picksMap[r.match_id], r); });
   await DB.updatePoints(playerName, pts);
@@ -817,7 +872,7 @@ async function recalcAllPoints() {
   await Promise.all(players.map(player => {
     const myPicks = allPicks.filter(p => p.player_name===player.name);
     const picksMap = {};
-    myPicks.forEach(r => { picksMap[r.match_id] = {outcome:r.outcome, goals1:r.goals1, goals2:r.goals2}; });
+    myPicks.forEach(r => { picksMap[r.match_id] = {outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, penales:r.penales}; });
     let pts = 0;
     resultsRows.forEach(r => { pts += calcPoints(picksMap[r.match_id], r); });
     return DB.updatePoints(player.name, pts);
@@ -833,7 +888,7 @@ async function renderAdminPlayers() {
     const medals = ["🥇","🥈","🥉"];
     container.innerHTML = players.map((p,i) => {
       const myPicks = allPicks.filter(pk => pk.player_name===p.name);
-      const correct = myPicks.filter(pk => { const r=resultsRows.find(r=>r.match_id===pk.match_id); return r && calcPoints({outcome:pk.outcome,goals1:pk.goals1,goals2:pk.goals2},r)>0; }).length;
+      const correct = myPicks.filter(pk => { const r=resultsRows.find(r=>r.match_id===pk.match_id); return r && calcPoints({outcome:pk.outcome,goals1:pk.goals1,goals2:pk.goals2,penales:pk.penales},r)>0; }).length;
       return `<div class="player-card">
         <div class="player-header">
           <span class="player-medal">${medals[i]||(i+1)}</span>
@@ -915,10 +970,12 @@ async function saveSettings() {
   const ptsWinner  = parseInt(document.getElementById("pts-winner").value)  || 1;
   const ptsPartial = parseInt(document.getElementById("pts-partial").value) || 1;
   const ptsExact   = parseInt(document.getElementById("pts-exact").value)   || 4;
+  const ptsPenalesEl = document.getElementById("pts-penales");
+  const ptsPenales = ptsPenalesEl ? (parseInt(ptsPenalesEl.value) || 0) : 1;
   setLoading("Guardando configuración...");
   try {
-    await DB.saveSettings({ pts_winner:ptsWinner, pts_partial:ptsPartial, pts_exact:ptsExact });
-    settings = { ...settings, ptsWinner, ptsPartial, ptsExact };
+    await DB.saveSettings({ pts_winner:ptsWinner, pts_partial:ptsPartial, pts_exact:ptsExact, pts_penales:ptsPenales });
+    settings = { ...settings, ptsWinner, ptsPartial, ptsExact, ptsPenales };
     await recalcAllPoints();
     alert("✅ Configuración guardada y puntos recalculados.");
   } catch(e) { alert("Error: "+e.message); }
