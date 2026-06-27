@@ -23,6 +23,33 @@ async function sbFetch(path, options = {}) {
   catch(e) { return null; }
 }
 
+// Trae TODAS las filas de una tabla en bloques de 1000 (evita el límite de Supabase)
+async function sbFetchAll(path) {
+  const pageSize = 1000;
+  let from = 0;
+  let all = [];
+  while (true) {
+    const to = from + pageSize - 1;
+    const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": "Bearer " + SUPABASE_KEY,
+        "Content-Type": "application/json",
+        "Range-Unit": "items",
+        "Range": from + "-" + to,
+      },
+    });
+    if (!res.ok) { const e = await res.text(); throw new Error("Supabase " + res.status + ": " + e); }
+    const text = await res.text();
+    let rows = [];
+    if (text && text.trim() !== "") { try { rows = JSON.parse(text); } catch(e) { rows = []; } }
+    all = all.concat(rows);
+    if (rows.length < pageSize) break; // ya no hay más páginas
+    from += pageSize;
+  }
+  return all;
+}
+
 const DB = {
   getPlayers:    ()           => sbFetch("players?select=*&order=points.desc"),
   createPlayer:  (name, pin)  => sbFetch("players", { method:"POST", body: JSON.stringify({name, pin, points:0}), prefer:"return=representation" }),
@@ -31,7 +58,7 @@ const DB = {
   updatePoints:  (name, pts)  => sbFetch("players?name=eq."+encodeURIComponent(name), { method:"PATCH", body: JSON.stringify({points:pts}), prefer:"return=minimal" }),
 
   getPicksByPlayer: (name)    => sbFetch("picks?player_name=eq."+encodeURIComponent(name)+"&select=*"),
-  getAllPicks:    ()           => sbFetch("picks?select=*&limit=100000"),
+  getAllPicks:    ()           => sbFetchAll("picks?select=*"),
   upsertPick:    (player_name, match_id, outcome, goals1, goals2, penales) =>
     sbFetch("picks?on_conflict=player_name,match_id", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2, penales}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
