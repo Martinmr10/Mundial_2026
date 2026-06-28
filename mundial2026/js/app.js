@@ -129,6 +129,7 @@ let lateAccessPlayers = new Map(); // jugadores con permiso especial { name -> e
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById(id).classList.add("active");
+  if (id !== "screen-player" && typeof stopAutoRefresh === "function") stopAutoRefresh();
   if (id === "screen-login") {
     populateLoginDropdown();
     document.getElementById("login-pin").value = "";
@@ -366,6 +367,7 @@ async function handleLogin() {
     renderPlayerMatches(currentPhase);
     renderMisPuntos();
     showScreen("screen-player");
+    startAutoRefresh();
   } catch(e) { alert("Error de conexión: "+e.message); }
   finally { hideLoading(); }
 }
@@ -1103,6 +1105,86 @@ async function resetAllData() {
 }
 
 populateLoginDropdown();
+
+// ══════════════════════════════════════════════════════
+//  AUTO-REFRESCO (jugador) — actualiza datos en segundo plano
+//  sin que el jugador tenga que recargar ni reingresar.
+// ══════════════════════════════════════════════════════
+let _autoRefreshTimer = null;
+let _autoRefreshBusy = false;
+const AUTO_REFRESH_MS = 45000; // cada 45 segundos
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  _autoRefreshTimer = setInterval(autoRefreshPlayer, AUTO_REFRESH_MS);
+}
+function stopAutoRefresh() {
+  if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
+}
+
+// ¿El jugador está escribiendo un marcador ahora mismo?
+function isPlayerEditingPicks() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const id = el.id || "";
+  return id.startsWith("g1-") || id.startsWith("g2-");
+}
+
+async function autoRefreshPlayer() {
+  const playerScreen = document.getElementById("screen-player");
+  if (!playerScreen || !playerScreen.classList.contains("active")) return;
+  if (!currentPlayer) return;
+  if (document.hidden) return;
+  if (_autoRefreshBusy) return;
+  _autoRefreshBusy = true;
+  try {
+    const [resultsRows, enabledRows, settingsFresh] = await Promise.all([
+      DB.getResults(), DB.getEnabled(), DB.getSettings()
+    ]);
+
+    const newResults = {};
+    (resultsRows||[]).forEach(r => { newResults[r.match_id] = {score1:r.score1, score2:r.score2, penales:r.penales}; });
+    const newEnabled = {};
+    (enabledRows||[]).forEach(r => { newEnabled[r.match_id] = true; });
+
+    const resultsChanged = JSON.stringify(newResults) !== JSON.stringify(cachedResults);
+    const enabledChanged = JSON.stringify(Object.keys(newEnabled).sort()) !== JSON.stringify(Object.keys(cachedEnabled).sort());
+    const phasesChanged  = JSON.stringify(settingsFresh.visiblePhases) !== JSON.stringify(settings.visiblePhases);
+
+    cachedResults = newResults;
+    cachedEnabled = newEnabled;
+    settings = settingsFresh;
+
+    if (phasesChanged) {
+      const visibles = settings.visiblePhases || PHASES.map(p=>p.id);
+      if (!visibles.includes(currentPhase)) {
+        const first = PHASES.find(p => visibles.includes(p.id));
+        if (first) currentPhase = first.id;
+      }
+      renderPhaseSelector("phase-selector", currentPhase, false);
+    }
+
+    const picksTabActive = document.getElementById("tab-picks")?.classList.contains("active");
+    if ((resultsChanged || enabledChanged || phasesChanged) && picksTabActive && !isPlayerEditingPicks()) {
+      renderPlayerMatches(currentPhase);
+    }
+    const puntosTabActive = document.getElementById("tab-mispuntos")?.classList.contains("active");
+    if (resultsChanged && puntosTabActive) renderMisPuntos();
+    const rankingTabActive = document.getElementById("tab-ranking")?.classList.contains("active");
+    if (resultsChanged && rankingTabActive) renderRankingJugadores();
+    const tablaTabActive = document.getElementById("tab-tabla")?.classList.contains("active");
+    if (resultsChanged && tablaTabActive) renderTablaGrupos();
+
+  } catch(e) {
+    console.warn("Auto-refresh falló (reintentará):", e.message);
+  } finally {
+    _autoRefreshBusy = false;
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) autoRefreshPlayer();
+});
 
 function renderTablaGrupos() {
   const container = document.getElementById("tabla-grupos-container");
