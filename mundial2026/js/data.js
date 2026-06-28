@@ -165,24 +165,25 @@ const ALL_MATCHES = [
   { id:"GL6", phase:"grupos", group:"Grupo L", team1:"Croacia",    team2:"Ghana",      kickoff:"2026-06-27T21:00:00Z" },
 
   // ══════════════════════════════════════════════════════
-  //  RONDA DE 32 (ET oficial + 4h = UTC)
+  //  RONDA DE 32 — EQUIPOS REALES (bracket FOX Sports, jun 27)
+  //  ⚠️ Algunos marcados (proyectado) según resultados finales de grupos
   // ══════════════════════════════════════════════════════
-  { id:"R32-1",  phase:"r32", group:"Ronda 32 · P73", team1:"2A", team2:"2B", kickoff:"2026-06-28T19:00:00Z" },
-  { id:"R32-2",  phase:"r32", group:"Ronda 32 · P76", team1:"1C", team2:"2F", kickoff:"2026-06-29T17:00:00Z" },
-  { id:"R32-3",  phase:"r32", group:"Ronda 32 · P74", team1:"1E", team2:"3(ABCDF)", kickoff:"2026-06-29T20:30:00Z" },
-  { id:"R32-4",  phase:"r32", group:"Ronda 32 · P75", team1:"1F", team2:"2C", kickoff:"2026-06-30T01:00:00Z" },
-  { id:"R32-5",  phase:"r32", group:"Ronda 32 · P78", team1:"2E", team2:"2I", kickoff:"2026-06-30T17:00:00Z" },
-  { id:"R32-6",  phase:"r32", group:"Ronda 32 · P77", team1:"1I", team2:"3(CDFGH)", kickoff:"2026-06-30T21:00:00Z" },
-  { id:"R32-7",  phase:"r32", group:"Ronda 32 · P79", team1:"1A", team2:"3(CEFHI)", kickoff:"2026-07-01T01:00:00Z" },
-  { id:"R32-8",  phase:"r32", group:"Ronda 32 · P80", team1:"1L", team2:"3(EHIJK)", kickoff:"2026-07-01T16:00:00Z" },
-  { id:"R32-9",  phase:"r32", group:"Ronda 32 · P82", team1:"1G", team2:"3(AEHIJ)", kickoff:"2026-07-01T20:00:00Z" },
-  { id:"R32-10", phase:"r32", group:"Ronda 32 · P81", team1:"1D", team2:"3(BEFIJ)", kickoff:"2026-07-02T00:00:00Z" },
-  { id:"R32-11", phase:"r32", group:"Ronda 32 · P84", team1:"1H", team2:"2J", kickoff:"2026-07-02T19:00:00Z" },
-  { id:"R32-12", phase:"r32", group:"Ronda 32 · P83", team1:"2K", team2:"2L", kickoff:"2026-07-02T23:00:00Z" },
-  { id:"R32-13", phase:"r32", group:"Ronda 32 · P85", team1:"1B", team2:"3(EFGIJ)", kickoff:"2026-07-03T03:00:00Z" },
-  { id:"R32-14", phase:"r32", group:"Ronda 32 · P88", team1:"2D", team2:"2G", kickoff:"2026-07-03T18:00:00Z" },
-  { id:"R32-15", phase:"r32", group:"Ronda 32 · P86", team1:"1J", team2:"2H", kickoff:"2026-07-03T22:00:00Z" },
-  { id:"R32-16", phase:"r32", group:"Ronda 32 · P87", team1:"1K", team2:"3(DEIJL)", kickoff:"2026-07-04T01:30:00Z" },
+  { id:"R32-1",  phase:"r32", group:"Ronda 32 · P73", team1:"Canadá",         team2:"Sudáfrica",   kickoff:"2026-06-28T19:00:00Z" },
+  { id:"R32-2",  phase:"r32", group:"Ronda 32 · P76", team1:"Brasil",         team2:"Japón",       kickoff:"2026-06-29T17:00:00Z" },
+  { id:"R32-3",  phase:"r32", group:"Ronda 32 · P74", team1:"Alemania",       team2:"Paraguay",    kickoff:"2026-06-29T20:30:00Z" },
+  { id:"R32-4",  phase:"r32", group:"Ronda 32 · P75", team1:"Países Bajos",   team2:"Marruecos",   kickoff:"2026-06-30T01:00:00Z" },
+  { id:"R32-5",  phase:"r32", group:"Ronda 32 · P78", team1:"Costa de Marfil",team2:"Noruega",     kickoff:"2026-06-30T17:00:00Z" },
+  { id:"R32-6",  phase:"r32", group:"Ronda 32 · P77", team1:"Francia",        team2:"Suecia",      kickoff:"2026-06-30T21:00:00Z" },
+  { id:"R32-7",  phase:"r32", group:"Ronda 32 · P79", team1:"México",         team2:"Ecuador",     kickoff:"2026-07-01T01:00:00Z" },
+  { id:"R32-8",  phase:"r32", group:"Ronda 32 · P80", team1:"Inglaterra",     team2:"Senegal",     kickoff:"2026-07-01T16:00:00Z" },
+  { id:"R32-9",  phase:"r32", group:"Ronda 32 · P82", team1:"Bélgica",        team2:"Corea del Sur",kickoff:"2026-07-01T20:00:00Z" },
+  { id:"R32-10", phase:"r32", group:"Ronda 32 · P81", team1:"EE.UU.",         team2:"Bosnia-Herzegovina",kickoff:"2026-07-02T00:00:00Z" },
+  { id:"R32-11", phase:"r32", group:"Ronda 32 · P84", team1:"España",         team2:"Austria",     kickoff:"2026-07-02T19:00:00Z" },
+  { id:"R32-12", phase:"r32", group:"Ronda 32 · P83", team1:"Portugal",       team2:"Ghana",       kickoff:"2026-07-02T23:00:00Z" },
+  { id:"R32-13", phase:"r32", group:"Ronda 32 · P85", team1:"Suiza",          team2:"Irán",        kickoff:"2026-07-03T03:00:00Z" },
+  { id:"R32-14", phase:"r32", group:"Ronda 32 · P88", team1:"Egipto",         team2:"Australia",   kickoff:"2026-07-03T18:00:00Z" },
+  { id:"R32-15", phase:"r32", group:"Ronda 32 · P86", team1:"Argentina",      team2:"Cabo Verde",  kickoff:"2026-07-03T22:00:00Z" },
+  { id:"R32-16", phase:"r32", group:"Ronda 32 · P87", team1:"Colombia",       team2:"Croacia",     kickoff:"2026-07-04T01:30:00Z" },
 
   // ══════════════════════════════════════════════════════
   //  OCTAVOS DE FINAL (ET + 4h = UTC)
