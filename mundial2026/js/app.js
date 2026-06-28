@@ -23,6 +23,33 @@ async function sbFetch(path, options = {}) {
   catch(e) { return null; }
 }
 
+// Trae TODAS las filas en bloques de 1000 usando offset+limit (evita el tope de Supabase)
+async function sbFetchAll(path) {
+  const pageSize = 1000;
+  let offset = 0;
+  let all = [];
+  const sep = path.includes("?") ? "&" : "?";
+  while (true) {
+    const url = SUPABASE_URL + "/rest/v1/" + path + sep + "limit=" + pageSize + "&offset=" + offset;
+    const res = await fetch(url, {
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": "Bearer " + SUPABASE_KEY,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) { const e = await res.text(); throw new Error("Supabase " + res.status + ": " + e); }
+    const text = await res.text();
+    let rows = [];
+    if (text && text.trim() !== "") { try { rows = JSON.parse(text); } catch(e) { rows = []; } }
+    all = all.concat(rows);
+    if (rows.length < pageSize) break; // última página
+    offset += pageSize;
+    if (offset > 100000) break; // tope de seguridad
+  }
+  return all;
+}
+
 const DB = {
   getPlayers:    ()           => sbFetch("players?select=*&order=points.desc"),
   createPlayer:  (name, pin)  => sbFetch("players", { method:"POST", body: JSON.stringify({name, pin, points:0}), prefer:"return=representation" }),
@@ -31,7 +58,7 @@ const DB = {
   updatePoints:  (name, pts)  => sbFetch("players?name=eq."+encodeURIComponent(name), { method:"PATCH", body: JSON.stringify({points:pts}), prefer:"return=minimal" }),
 
   getPicksByPlayer: (name)    => sbFetch("picks?player_name=eq."+encodeURIComponent(name)+"&select=*"),
-  getAllPicks:    ()           => sbFetch("picks?select=*&limit=100000"),
+  getAllPicks:    ()           => sbFetchAll("picks?select=*"),
   upsertPick:    (player_name, match_id, outcome, goals1, goals2, penales) =>
     sbFetch("picks?on_conflict=player_name,match_id", { method:"POST", body: JSON.stringify({player_name, match_id, outcome, goals1, goals2, penales}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
@@ -869,15 +896,13 @@ async function recalcPointsForPlayer(playerName) {
 
 async function recalcAllPoints() {
   const [players, resultsRows, allPicks] = await Promise.all([DB.getPlayers(), DB.getResults(), DB.getAllPicks()]);
-  // Actualizar en SECUENCIA (no en paralelo) para que Supabase no rechace
-  // escrituras simultáneas y ningún jugador quede sin actualizar.
+  // Actualizar en SECUENCIA (no en paralelo) para que Supabase no rechace escrituras.
   for (const player of players) {
     const myPicks = allPicks.filter(p => p.player_name === player.name);
     const picksMap = {};
     myPicks.forEach(r => { picksMap[r.match_id] = {outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, penales:r.penales}; });
     let pts = 0;
     resultsRows.forEach(r => { pts += calcPoints(picksMap[r.match_id], r); });
-    // Intentar guardar; si falla, reintentar una vez antes de seguir
     try {
       await DB.updatePoints(player.name, pts);
     } catch(e) {
