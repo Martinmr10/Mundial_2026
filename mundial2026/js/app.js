@@ -95,11 +95,19 @@ const DB = {
     const rows = await sbFetch("settings?select=*");
     const s = {};
     (rows||[]).forEach(r => { s[r.key] = r.value; });
+    // visible_phases: lista separada por comas. Si no existe, todas visibles.
+    let visiblePhases;
+    if (s.visible_phases === undefined || s.visible_phases === null || s.visible_phases === "") {
+      visiblePhases = PHASES.map(p => p.id); // por defecto todas
+    } else {
+      visiblePhases = s.visible_phases.split(",").map(x => x.trim()).filter(Boolean);
+    }
     return {
       ptsWinner:  parseInt(s.pts_winner  ?? 1),
       ptsPartial: parseInt(s.pts_partial ?? 1),
       ptsExact:   parseInt(s.pts_exact   ?? 4),
       ptsPenales: parseInt(s.pts_penales ?? 1),
+      visiblePhases: visiblePhases,
       wcApiKey:   s.wc_api_key || "",
     };
   },
@@ -112,7 +120,7 @@ const DB = {
 let currentPlayer = null;
 let currentPhase  = "grupos";
 let adminPhase    = "grupos";
-let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, ptsPenales:1, wcApiKey:"" };
+let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, ptsPenales:1, visiblePhases:["grupos","r32","r16","cuartos","semi","final"], wcApiKey:"" };
 let playerPicks   = {};
 let cachedResults = {};
 let cachedEnabled = {};
@@ -339,6 +347,12 @@ async function handleLogin() {
     document.getElementById("login-pin").value = "";
     currentPhase = "grupos";
     settings = await DB.getSettings();
+    // Si grupos no está visible, arrancar en la primera fase visible
+    const visibles = settings.visiblePhases || PHASES.map(p=>p.id);
+    if (!visibles.includes(currentPhase)) {
+      const first = PHASES.find(p => visibles.includes(p.id));
+      if (first) currentPhase = first.id;
+    }
     const myPicksRows = await DB.getPicksByPlayer(name);
     playerPicks = {};
     (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, penales:r.penales, _saved:true }; });
@@ -367,6 +381,7 @@ async function handleAdminLogin() {
     document.getElementById("pts-exact").value   = settings.ptsExact;
     const penInput = document.getElementById("pts-penales"); if (penInput) penInput.value = settings.ptsPenales;
     document.getElementById("wc-api-key").value  = settings.wcApiKey;
+    renderPhaseToggles();
     const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
     (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {score1:r.score1, score2:r.score2, penales:r.penales}; });
@@ -397,7 +412,9 @@ function switchAdminTab(tab) {
 }
 
 function renderPhaseSelector(cid, activePhase, isAdmin) {
-  document.getElementById(cid).innerHTML = PHASES.map(p =>
+  // El admin ve todas las fases; el jugador solo las habilitadas (visiblePhases)
+  const phasesToShow = isAdmin ? PHASES : PHASES.filter(p => (settings.visiblePhases || []).includes(p.id));
+  document.getElementById(cid).innerHTML = phasesToShow.map(p =>
     `<button class="phase-btn ${p.id===activePhase?'active':''}"
       onclick="${isAdmin?`switchAdminPhase('${p.id}')`:`switchPhase('${p.id}')`}">${p.label}</button>`
   ).join("");
@@ -995,6 +1012,50 @@ async function deletePlayer(name) {
     await DB.deletePlayer(name);
     await renderAdminPlayers();
     await populateLoginDropdown();
+  } catch(e) { alert("Error: "+e.message); }
+  finally { hideLoading(); }
+}
+
+// ── Visibilidad de fases (switches en CONFIG) ────────────
+let _phaseVisibilityDraft = null;
+
+function renderPhaseToggles() {
+  const cont = document.getElementById("phase-toggles");
+  if (!cont) return;
+  // Inicializar el borrador con lo que está guardado
+  _phaseVisibilityDraft = new Set(settings.visiblePhases || PHASES.map(p=>p.id));
+  cont.innerHTML = PHASES.map(p => {
+    const on = _phaseVisibilityDraft.has(p.id);
+    return `<div class="phase-toggle-row">
+      <span class="phase-toggle-label">${p.label}</span>
+      <button class="phase-toggle-btn ${on?'on':'off'}" id="phtoggle-${p.id}" onclick="togglePhaseVisibility('${p.id}')">
+        ${on ? '👁️ Visible' : '🚫 Oculta'}
+      </button>
+    </div>`;
+  }).join("");
+}
+
+function togglePhaseVisibility(phaseId) {
+  if (!_phaseVisibilityDraft) _phaseVisibilityDraft = new Set(settings.visiblePhases || []);
+  if (_phaseVisibilityDraft.has(phaseId)) _phaseVisibilityDraft.delete(phaseId);
+  else _phaseVisibilityDraft.add(phaseId);
+  const btn = document.getElementById("phtoggle-"+phaseId);
+  if (btn) {
+    const on = _phaseVisibilityDraft.has(phaseId);
+    btn.className = "phase-toggle-btn " + (on?'on':'off');
+    btn.textContent = on ? '👁️ Visible' : '🚫 Oculta';
+  }
+}
+
+async function savePhaseVisibility() {
+  if (!_phaseVisibilityDraft) return;
+  // Mantener el orden original de PHASES
+  const visibles = PHASES.map(p=>p.id).filter(id => _phaseVisibilityDraft.has(id));
+  setLoading("Guardando fases visibles...");
+  try {
+    await DB.saveSettings({ visible_phases: visibles.join(",") });
+    settings = { ...settings, visiblePhases: visibles };
+    alert("✅ Fases visibles actualizadas. Los jugadores verán los cambios al recargar.");
   } catch(e) { alert("Error: "+e.message); }
   finally { hideLoading(); }
 }
