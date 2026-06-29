@@ -193,6 +193,7 @@ function renderPicksModalContent() {
   }
 
   const rows = matches.map(m => {
+    m = getResolvedMatch(m);
     const pick = picksMap[m.id];
     const result = resultsMap[m.id];
     const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
@@ -260,6 +261,67 @@ function getOutcome(s1, s2) { return s1>s2?"1":s1<s2?"2":"x"; }
 
 // ¿Es partido de fase eliminatoria? (todo lo que no sea grupos)
 function isKnockout(m) { return m && m.phase && m.phase !== "grupos"; }
+
+// ══════════════════════════════════════════════════════
+//  AUTOCOMPLETADO DE FASES (resolver placeholders al vuelo)
+//  W-R32-1 = ganador del partido R32-1
+//  L-SEMI-1 = perdedor de la semifinal 1 (para 3er puesto)
+// ══════════════════════════════════════════════════════
+
+// Devuelve el ganador de un partido (por marcador o penales), o null si no hay resultado claro
+function getMatchWinner(matchId) {
+  const r = cachedResults[matchId];
+  if (!r || r.score1 === undefined || r.score1 === null || r.score1 === "") return null;
+  const m = ALL_MATCHES.find(x => x.id === matchId);
+  if (!m) return null;
+  const s1 = parseInt(r.score1), s2 = parseInt(r.score2);
+  if (isNaN(s1) || isNaN(s2)) return null;
+  // Resolver los equipos del partido (pueden ser placeholders también)
+  const t1 = resolveTeam(m.team1), t2 = resolveTeam(m.team2);
+  if (s1 > s2) return t1;
+  if (s2 > s1) return t2;
+  // Empate → definir por penales (r.penales: "1" o "2")
+  if (r.penales === "1") return t1;
+  if (r.penales === "2") return t2;
+  return null; // empate sin penales definidos aún
+}
+
+// Devuelve el perdedor de un partido (para el 3er puesto)
+function getMatchLoser(matchId) {
+  const r = cachedResults[matchId];
+  if (!r || r.score1 === undefined || r.score1 === null || r.score1 === "") return null;
+  const m = ALL_MATCHES.find(x => x.id === matchId);
+  if (!m) return null;
+  const s1 = parseInt(r.score1), s2 = parseInt(r.score2);
+  if (isNaN(s1) || isNaN(s2)) return null;
+  const t1 = resolveTeam(m.team1), t2 = resolveTeam(m.team2);
+  if (s1 > s2) return t2;
+  if (s2 > s1) return t1;
+  if (r.penales === "1") return t2;
+  if (r.penales === "2") return t1;
+  return null;
+}
+
+// Convierte un código de equipo (W-R32-1, L-SEMI-1) en el nombre real, o lo deja igual
+function resolveTeam(code) {
+  if (!code || typeof code !== "string") return code;
+  if (code.startsWith("W-")) {
+    const refId = code.slice(2); // "R32-1"
+    const winner = getMatchWinner(refId);
+    return winner || code; // si aún no hay ganador, mantener el placeholder
+  }
+  if (code.startsWith("L-")) {
+    const refId = code.slice(2);
+    const loser = getMatchLoser(refId);
+    return loser || code;
+  }
+  return code; // equipo real (grupos o ya cargado)
+}
+
+// Devuelve una copia del partido con team1/team2 resueltos
+function getResolvedMatch(m) {
+  return { ...m, team1: resolveTeam(m.team1), team2: resolveTeam(m.team2) };
+}
 
 // Verifica si el partido está bloqueado para un jugador específico
 function isLockedForPlayer(m, hasResult, playerName) {
@@ -433,6 +495,7 @@ function renderPlayerMatches(phase) {
 }
 
 function renderMatchCard(m, result) {
+  m = getResolvedMatch(m); // resolver placeholders W-R32-X a equipos reales
   const pick = playerPicks[m.id] || {};
   const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
   const hasResult = result && result.score1 !== undefined;
@@ -659,6 +722,7 @@ function renderMisPuntos() {
     <div class="mispuntos-historial">
       <div class="group-label" style="padding:0 0 10px;">Historial de partidos</div>
       ${played.map(m => {
+        m = getResolvedMatch(m);
         const r = cachedResults[m.id], p = playerPicks[m.id];
         const pts = calcPoints(p, r);
         const f1=FLAGS[m.team1]||"🏳", f2=FLAGS[m.team2]||"🏳";
@@ -759,6 +823,7 @@ function renderAdminMatches(phase) {
 }
 
 function renderAdminMatchCard(m) {
+  m = getResolvedMatch(m); // resolver placeholders a equipos reales
   const r        = cachedResults[m.id]||{};
   const f1       = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
   const hasResult= r.score1 !== undefined;
@@ -862,6 +927,7 @@ async function saveResults() {
     });
     await Promise.all(toSave.map(r => DB.upsertResult(r.match_id, r.score1, r.score2, r.penales)));
     await recalcAllPoints();
+    renderAdminMatches(adminPhase); // refrescar para reflejar equipos que avanzaron
     alert("✅ "+toSave.length+" resultado(s) guardado(s).");
   } catch(e) { alert("❌ Error: "+e.message); }
   finally { hideLoading(); }
