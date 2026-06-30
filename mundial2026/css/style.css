@@ -1088,3 +1088,88 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
   color: #f0f4ff;
   font-size: 12px;
 }
+/* ── LLAVES (bracket) ──────────────────────────────────── */
+.llaves-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 2px;
+  color: #ffd600;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.llaves-sub {
+  text-align: center;
+  font-size: 12px;
+  color: #8899bb;
+  margin-bottom: 20px;
+}
+.llaves-fase {
+  margin-bottom: 22px;
+}
+.llaves-fase-header {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  letter-spacing: 1.5px;
+  color: #f0f4ff;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, rgba(255,214,0,0.15), transparent);
+  border-left: 3px solid #ffd600;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+.llaves-fase-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.llaves-match {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.llaves-fecha {
+  font-size: 10px;
+  color: #8899bb;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.llaves-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+}
+.llaves-flag { font-size: 18px; width: 22px; text-align: center; }
+.llaves-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #f0f4ff;
+}
+.llaves-score {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  color: #f0f4ff;
+  min-width: 20px;
+  text-align: center;
+}
+.llaves-win .llaves-name { color: #ffd600; font-weight: 600; }
+.llaves-win .llaves-score { color: #ffd600; }
+.llaves-win { position: relative; }
+.llaves-win::after {
+  content: "✓";
+  color: #00c853;
+  font-size: 13px;
+  margin-left: 2px;
+}
+.llaves-pend .llaves-name { color: #66708a; font-style: italic; }
+.llaves-pen {
+  display: block;
+  font-size: 10px;
+  color: #ffd600;
+  text-align: center;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
