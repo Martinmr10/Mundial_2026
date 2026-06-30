@@ -1256,73 +1256,124 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ══════════════════════════════════════════════════════
-//  LLAVES (bracket) — vista vertical por fases, optimizada móvil
+//  LLAVES (bracket visual estilo torneo, adaptado a móvil)
+//  Dos lados que convergen en la Final. Banderas + nombre corto.
 // ══════════════════════════════════════════════════════
+
+// Nombres cortos para que quepan en las llaves
+const SHORT_NAMES = {
+  "México":"MEX","Sudáfrica":"RSA","Corea del Sur":"KOR","Chequia":"CZE",
+  "Canadá":"CAN","Bosnia-Herzegovina":"BIH","Qatar":"QAT","Suiza":"SUI",
+  "Brasil":"BRA","Marruecos":"MAR","Haití":"HAI","Escocia":"SCO",
+  "EE.UU.":"USA","Paraguay":"PAR","Australia":"AUS","Turquía":"TUR",
+  "Alemania":"ALE","Curazao":"CUW","Costa de Marfil":"CIV","Ecuador":"ECU",
+  "Países Bajos":"NED","Japón":"JPN","Suecia":"SWE","Túnez":"TUN",
+  "Bélgica":"BEL","Egipto":"EGY","Irán":"IRN","Nueva Zelanda":"NZL",
+  "España":"ESP","Cabo Verde":"CPV","Arabia S.":"KSA","Uruguay":"URU",
+  "Francia":"FRA","Senegal":"SEN","Irak":"IRQ","Noruega":"NOR",
+  "Argentina":"ARG","Argelia":"ALG","Austria":"AUT","Jordania":"JOR",
+  "Portugal":"POR","Congo DR":"COD","Uzbekistán":"UZB","Colombia":"COL",
+  "Inglaterra":"ING","Croacia":"CRO","Ghana":"GHA","Panamá":"PAN",
+};
+
+function shortName(team) {
+  if (!team) return "";
+  if (SHORT_NAMES[team]) return SHORT_NAMES[team];
+  // placeholder (W-R32-1, 1A, 3(ABCDF)...) → "?"
+  if (/^(W-|L-|\d|3\()/.test(team)) return "?";
+  return team.slice(0,3).toUpperCase();
+}
+
+// Celda de un equipo dentro de una llave
+function llaveCell(matchId, slot) {
+  // slot: "team1" o "team2"
+  const m = ALL_MATCHES.find(x => x.id === matchId);
+  if (!m) return `<div class="bk-cell bk-empty">—</div>`;
+  const rm = getResolvedMatch(m);
+  const teamCode = slot === "team1" ? m.team1 : m.team2;
+  const teamResolved = slot === "team1" ? rm.team1 : rm.team2;
+  const pendiente = teamResolved === teamCode && /^(W-|L-|\d|3\()/.test(teamCode);
+  const flag = pendiente ? "⚪" : (FLAGS[teamResolved] || "🏳");
+  const name = pendiente ? "?" : shortName(teamResolved);
+
+  const r = cachedResults[matchId];
+  const hasResult = r && r.score1 !== undefined && r.score1 !== null && r.score1 !== "";
+  const score = hasResult ? (slot === "team1" ? r.score1 : r.score2) : "";
+  const winner = hasResult ? getMatchWinner(matchId) : null;
+  const isWin = winner && winner === teamResolved;
+
+  return `<div class="bk-cell ${isWin?'bk-win':''} ${pendiente?'bk-pend':''}">
+    <span class="bk-flag">${flag}</span>
+    <span class="bk-name">${name}</span>
+    <span class="bk-score">${score}</span>
+  </div>`;
+}
+
+// Una llave completa (un partido con sus 2 equipos)
+function llaveMatch(matchId) {
+  return `<div class="bk-match" data-mid="${matchId}">
+    ${llaveCell(matchId, "team1")}
+    ${llaveCell(matchId, "team2")}
+  </div>`;
+}
+
 function renderLlaves() {
   const container = document.getElementById("llaves-container");
   if (!container) return;
 
-  // Fases eliminatorias a mostrar, en orden
-  const bracketPhases = [
-    { id:"r32",     label:"🏆 Ronda de 32" },
-    { id:"r16",     label:"⚡ Octavos de Final" },
-    { id:"cuartos", label:"🔥 Cuartos de Final" },
-    { id:"semi",    label:"⭐ Semifinales / 3er Puesto" },
-    { id:"final",   label:"👑 Gran Final" },
-  ];
+  // Estructura del bracket (según data.js)
+  // LADO IZQUIERDO → SEMI-1
+  const leftR16  = ["R16-2","R16-1","R16-5","R16-6"];
+  const leftQF   = ["QF-1","QF-2"];
+  // LADO DERECHO → SEMI-2
+  const rightR16 = ["R16-3","R16-4","R16-7","R16-8"];
+  const rightQF  = ["QF-3","QF-4"];
 
-  let html = `<div class="llaves-title">🔑 LLAVES DEL MUNDIAL</div>
-    <p class="llaves-sub">Se completa solo conforme avanza el torneo</p>`;
+  const col = (title, matchIds) => `
+    <div class="bk-col">
+      <div class="bk-col-title">${title}</div>
+      ${matchIds.map(id => llaveMatch(id)).join("")}
+    </div>`;
 
-  bracketPhases.forEach(ph => {
-    const matches = ALL_MATCHES.filter(m => m.phase === ph.id)
-      .slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
-    if (!matches.length) return;
+  let html = `<div class="bk-title">🔑 LLAVES DEL MUNDIAL</div>
+    <p class="bk-sub">Octavos en adelante — se completa solo</p>`;
 
-    html += `<div class="llaves-fase">
-      <div class="llaves-fase-header">${ph.label}</div>
-      <div class="llaves-fase-body">`;
+  // ── LADO IZQUIERDO ──
+  html += `<div class="bk-side-label">◀ LADO IZQUIERDO</div>
+    <div class="bk-scroll"><div class="bk-grid">
+      ${col("Octavos", leftR16)}
+      ${col("Cuartos", leftQF)}
+      ${col("Semi", ["SEMI-1"])}
+    </div></div>`;
 
-    matches.forEach(m => {
-      const rm = getResolvedMatch(m);
-      const r = cachedResults[m.id];
-      const hasResult = r && r.score1 !== undefined && r.score1 !== null && r.score1 !== "";
-      const f1 = FLAGS[rm.team1] || "🏳", f2 = FLAGS[rm.team2] || "🏳";
+  // ── FINAL (centro) ──
+  html += `<div class="bk-final-wrap">
+    <div class="bk-final-trophy">🏆</div>
+    <div class="bk-final-title">GRAN FINAL</div>
+    ${llaveMatch("FINAL")}
+    <div class="bk-tercer">
+      <div class="bk-tercer-title">🥉 3er Puesto</div>
+      ${llaveMatch("SEMI-3")}
+    </div>
+  </div>`;
 
-      // ¿Equipo por definir? (sigue siendo placeholder)
-      const t1Pendiente = rm.team1 === m.team1 && /^(W-|L-|\d|3\()/.test(m.team1);
-      const t2Pendiente = rm.team2 === m.team2 && /^(W-|L-|\d|3\()/.test(m.team2);
-      const t1Name = t1Pendiente ? "Por definir" : rm.team1;
-      const t2Name = t2Pendiente ? "Por definir" : rm.team2;
+  // ── LADO DERECHO ──
+  html += `<div class="bk-side-label">LADO DERECHO ▶</div>
+    <div class="bk-scroll"><div class="bk-grid">
+      ${col("Octavos", rightR16)}
+      ${col("Cuartos", rightQF)}
+      ${col("Semi", ["SEMI-2"])}
+    </div></div>`;
 
-      let s1 = "", s2 = "", winner = null;
-      if (hasResult) {
-        s1 = r.score1; s2 = r.score2;
-        winner = getMatchWinner(m.id); // nombre del equipo que avanzó
-      }
-
-      const t1Win = winner && winner === rm.team1;
-      const t2Win = winner && winner === rm.team2;
-      const penTxt = (hasResult && r.penales) ? `<span class="llaves-pen">🥅 Penales: ${r.penales==='1'?rm.team1:rm.team2}</span>` : "";
-
-      html += `<div class="llaves-match">
-        <div class="llaves-fecha">${m.kickoff ? formatKickoff(m.kickoff) : ""}</div>
-        <div class="llaves-team ${t1Win?'llaves-win':''} ${t1Pendiente?'llaves-pend':''}">
-          <span class="llaves-flag">${t1Pendiente?'⚪':f1}</span>
-          <span class="llaves-name">${t1Name}</span>
-          <span class="llaves-score">${hasResult?s1:''}</span>
-        </div>
-        <div class="llaves-team ${t2Win?'llaves-win':''} ${t2Pendiente?'llaves-pend':''}">
-          <span class="llaves-flag">${t2Pendiente?'⚪':f2}</span>
-          <span class="llaves-name">${t2Name}</span>
-          <span class="llaves-score">${hasResult?s2:''}</span>
-        </div>
-        ${penTxt}
-      </div>`;
-    });
-
-    html += `</div></div>`;
-  });
+  // ── RONDA DE 32 (lista compacta abajo, por si quieren ver el inicio) ──
+  const r32 = ALL_MATCHES.filter(m=>m.phase==="r32")
+    .slice().sort((a,b)=>new Date(a.kickoff||0)-new Date(b.kickoff||0));
+  html += `<div class="bk-r32-section">
+    <div class="bk-col-title" style="text-align:center;margin:20px 0 12px;">🏁 Ronda de 32</div>
+    <div class="bk-r32-grid">
+      ${r32.map(m => llaveMatch(m.id)).join("")}
+    </div>
+  </div>`;
 
   container.innerHTML = html;
 }
