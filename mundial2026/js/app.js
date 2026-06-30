@@ -466,6 +466,7 @@ function switchTab(tab) {
   document.querySelectorAll("#screen-player .tab-content").forEach(c => c.classList.toggle("active", c.id==="tab-"+tab));
   if (tab==="mispuntos") renderMisPuntos();
   if (tab==="tabla") renderTablaGrupos();
+  if (tab==="llaves") renderLlaves();
   if (tab==="ranking") renderRankingJugadores();
 }
 function switchAdminTab(tab) {
@@ -1240,6 +1241,8 @@ async function autoRefreshPlayer() {
     if (resultsChanged && rankingTabActive) renderRankingJugadores();
     const tablaTabActive = document.getElementById("tab-tabla")?.classList.contains("active");
     if (resultsChanged && tablaTabActive) renderTablaGrupos();
+    const llavesTabActive = document.getElementById("tab-llaves")?.classList.contains("active");
+    if (resultsChanged && llavesTabActive) renderLlaves();
 
   } catch(e) {
     console.warn("Auto-refresh falló (reintentará):", e.message);
@@ -1251,6 +1254,78 @@ async function autoRefreshPlayer() {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) autoRefreshPlayer();
 });
+
+// ══════════════════════════════════════════════════════
+//  LLAVES (bracket) — vista vertical por fases, optimizada móvil
+// ══════════════════════════════════════════════════════
+function renderLlaves() {
+  const container = document.getElementById("llaves-container");
+  if (!container) return;
+
+  // Fases eliminatorias a mostrar, en orden
+  const bracketPhases = [
+    { id:"r32",     label:"🏆 Ronda de 32" },
+    { id:"r16",     label:"⚡ Octavos de Final" },
+    { id:"cuartos", label:"🔥 Cuartos de Final" },
+    { id:"semi",    label:"⭐ Semifinales / 3er Puesto" },
+    { id:"final",   label:"👑 Gran Final" },
+  ];
+
+  let html = `<div class="llaves-title">🔑 LLAVES DEL MUNDIAL</div>
+    <p class="llaves-sub">Se completa solo conforme avanza el torneo</p>`;
+
+  bracketPhases.forEach(ph => {
+    const matches = ALL_MATCHES.filter(m => m.phase === ph.id)
+      .slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
+    if (!matches.length) return;
+
+    html += `<div class="llaves-fase">
+      <div class="llaves-fase-header">${ph.label}</div>
+      <div class="llaves-fase-body">`;
+
+    matches.forEach(m => {
+      const rm = getResolvedMatch(m);
+      const r = cachedResults[m.id];
+      const hasResult = r && r.score1 !== undefined && r.score1 !== null && r.score1 !== "";
+      const f1 = FLAGS[rm.team1] || "🏳", f2 = FLAGS[rm.team2] || "🏳";
+
+      // ¿Equipo por definir? (sigue siendo placeholder)
+      const t1Pendiente = rm.team1 === m.team1 && /^(W-|L-|\d|3\()/.test(m.team1);
+      const t2Pendiente = rm.team2 === m.team2 && /^(W-|L-|\d|3\()/.test(m.team2);
+      const t1Name = t1Pendiente ? "Por definir" : rm.team1;
+      const t2Name = t2Pendiente ? "Por definir" : rm.team2;
+
+      let s1 = "", s2 = "", winner = null;
+      if (hasResult) {
+        s1 = r.score1; s2 = r.score2;
+        winner = getMatchWinner(m.id); // nombre del equipo que avanzó
+      }
+
+      const t1Win = winner && winner === rm.team1;
+      const t2Win = winner && winner === rm.team2;
+      const penTxt = (hasResult && r.penales) ? `<span class="llaves-pen">🥅 Penales: ${r.penales==='1'?rm.team1:rm.team2}</span>` : "";
+
+      html += `<div class="llaves-match">
+        <div class="llaves-fecha">${m.kickoff ? formatKickoff(m.kickoff) : ""}</div>
+        <div class="llaves-team ${t1Win?'llaves-win':''} ${t1Pendiente?'llaves-pend':''}">
+          <span class="llaves-flag">${t1Pendiente?'⚪':f1}</span>
+          <span class="llaves-name">${t1Name}</span>
+          <span class="llaves-score">${hasResult?s1:''}</span>
+        </div>
+        <div class="llaves-team ${t2Win?'llaves-win':''} ${t2Pendiente?'llaves-pend':''}">
+          <span class="llaves-flag">${t2Pendiente?'⚪':f2}</span>
+          <span class="llaves-name">${t2Name}</span>
+          <span class="llaves-score">${hasResult?s2:''}</span>
+        </div>
+        ${penTxt}
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  container.innerHTML = html;
+}
 
 function renderTablaGrupos() {
   const container = document.getElementById("tabla-grupos-container");
