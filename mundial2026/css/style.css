@@ -1088,88 +1088,63 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
   color: #f0f4ff;
   font-size: 12px;
 }
-/* ── LLAVES (bracket) ──────────────────────────────────── */
-.llaves-title {
+/* ── LLAVES estilo BRACKET visual ──────────────────────── */
+.bk-title {
   font-family: 'Bebas Neue', sans-serif;
-  font-size: 26px;
-  letter-spacing: 2px;
-  color: #ffd600;
-  text-align: center;
-  margin-bottom: 4px;
+  font-size: 26px; letter-spacing: 2px; color: #ffd600;
+  text-align: center; margin-bottom: 2px;
 }
-.llaves-sub {
-  text-align: center;
-  font-size: 12px;
-  color: #8899bb;
-  margin-bottom: 20px;
+.bk-sub { text-align: center; font-size: 11px; color: #8899bb; margin-bottom: 18px; }
+.bk-side-label {
+  font-family: 'Bebas Neue', sans-serif; font-size: 14px;
+  letter-spacing: 1px; color: #ffd600; margin: 16px 0 8px;
 }
-.llaves-fase {
-  margin-bottom: 22px;
+.bk-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+.bk-grid { display: flex; gap: 10px; min-width: min-content; align-items: center; }
+.bk-col { display: flex; flex-direction: column; justify-content: space-around; gap: 10px; flex: 1; min-width: 92px; }
+.bk-col-title {
+  font-size: 10px; color: #8899bb; text-transform: uppercase;
+  letter-spacing: 1px; text-align: center; margin-bottom: 4px;
 }
-.llaves-fase-header {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 18px;
-  letter-spacing: 1.5px;
-  color: #f0f4ff;
-  padding: 8px 12px;
-  background: linear-gradient(90deg, rgba(255,214,0,0.15), transparent);
-  border-left: 3px solid #ffd600;
-  border-radius: 4px;
-  margin-bottom: 12px;
-}
-.llaves-fase-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.llaves-match {
+.bk-match {
   background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px; overflow: hidden;
 }
-.llaves-fecha {
-  font-size: 10px;
-  color: #8899bb;
-  margin-bottom: 6px;
-  text-align: center;
+.bk-cell {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 7px; border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.llaves-team {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 4px;
+.bk-cell:last-child { border-bottom: none; }
+.bk-flag { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+.bk-name {
+  flex: 1; font-size: 12px; font-weight: 600; color: #f0f4ff;
+  font-family: 'DM Sans', sans-serif; letter-spacing: 0.3px;
 }
-.llaves-flag { font-size: 18px; width: 22px; text-align: center; }
-.llaves-name {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-  color: #f0f4ff;
+.bk-score {
+  font-family: 'Bebas Neue', sans-serif; font-size: 15px;
+  color: #f0f4ff; min-width: 14px; text-align: center;
 }
-.llaves-score {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 18px;
-  color: #f0f4ff;
-  min-width: 20px;
-  text-align: center;
+.bk-win { background: rgba(255,214,0,0.12); }
+.bk-win .bk-name { color: #ffd600; }
+.bk-win .bk-score { color: #ffd600; }
+.bk-pend .bk-name { color: #5a6party; opacity: 0.5; }
+.bk-empty { color: #66708a; justify-content: center; font-size: 12px; }
+.bk-final-wrap {
+  text-align: center; margin: 24px 0; padding: 18px 12px;
+  background: radial-gradient(ellipse at center, rgba(255,214,0,0.1), transparent);
+  border-radius: 14px;
 }
-.llaves-win .llaves-name { color: #ffd600; font-weight: 600; }
-.llaves-win .llaves-score { color: #ffd600; }
-.llaves-win { position: relative; }
-.llaves-win::after {
-  content: "✓";
-  color: #00c853;
-  font-size: 13px;
-  margin-left: 2px;
+.bk-final-trophy { font-size: 40px; margin-bottom: 4px; }
+.bk-final-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 22px;
+  letter-spacing: 2px; color: #ffd600; margin-bottom: 12px;
 }
-.llaves-pend .llaves-name { color: #66708a; font-style: italic; }
-.llaves-pen {
-  display: block;
-  font-size: 10px;
-  color: #ffd600;
-  text-align: center;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+.bk-final-wrap .bk-match { max-width: 200px; margin: 0 auto; border-color: rgba(255,214,0,0.4); }
+.bk-tercer { margin-top: 18px; }
+.bk-tercer-title { font-size: 12px; color: #cd7f32; margin-bottom: 8px; letter-spacing: 1px; }
+.bk-tercer .bk-match { max-width: 180px; margin: 0 auto; }
+.bk-r32-section { margin-top: 24px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; }
+.bk-r32-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
 }
