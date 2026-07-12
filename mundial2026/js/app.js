@@ -790,11 +790,28 @@ function renderMisPuntos() {
         else if (p.outcome==="2") pronostico="Gana "+m.team2;
         else if (p.outcome==="x") pronostico="Empate";
         const marcaExtra = exacto ? ' ⭐ ¡Exacto!' : (exacto90 ? " ⏱️ ¡Exacto a los 90'!" : '');
+
+        // ── Penales: qué eligió el jugador y si acertó ──
+        let penalesLinea = "";
+        if (r.penales) { // el partido SÍ se fue a penales
+          const ganadorReal = r.penales === "1" ? m.team1 : m.team2;
+          if (p.penales) {
+            const suEleccion = p.penales === "1" ? m.team1 : m.team2;
+            const acerto = p.penales === r.penales;
+            penalesLinea = `<div style="font-size:11px;color:${acerto?'#00c853':'#e57373'};margin-top:2px;">
+              🥅 Penales: elegiste ${suEleccion} ${acerto ? `✅ +${settings.ptsPenales}pt` : `❌ (ganó ${ganadorReal})`}
+            </div>`;
+          } else {
+            penalesLinea = `<div style="font-size:11px;color:#8899bb;margin-top:2px;">🥅 Se definió por penales — ganó ${ganadorReal}</div>`;
+          }
+        }
+
         return `<div class="historial-row ${pts>0?'ok':'fail'}">
           <span class="historial-icon">${exacto?'⭐':(exacto90?'⏱️':(pts>0?'✅':'❌'))}</span>
           <div style="flex:1">
             <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}${alargueConGoles?` <span style="font-size:10px;color:#ffd600;">(90': ${a90}-${b90})</span>`:''}</div>
             <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}${marcaExtra}</div>
+            ${penalesLinea}
           </div>
           <span class="historial-pts">${pts>0?'+'+pts:'0'} pts</span>
         </div>`;
