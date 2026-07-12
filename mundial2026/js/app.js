@@ -200,7 +200,12 @@ function renderPicksModalContent() {
     const result = resultsMap[m.id];
     const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
     const hasResult = result && result.score1 !== undefined;
-    let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0, exacto = false;
+    let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0, exacto = false, exacto90 = false;
+    // ¿Hubo alargue con goles en este partido?
+    const a90 = hasResult ? parseInt(result.score1_90) : NaN;
+    const b90 = hasResult ? parseInt(result.score2_90) : NaN;
+    const hubo90 = !isNaN(a90) && !isNaN(b90);
+    const alargueConGoles = hubo90 && (a90!==parseInt(result.score1) || b90!==parseInt(result.score2));
     if (pick) {
       const { g1, g2, hasPrediction } = resolveGoals(pick);
       if (hasPrediction) pickText = g1+"–"+g2;
@@ -211,6 +216,7 @@ function renderPicksModalContent() {
         pts = calcPoints(pick, result);
         pickColor = pts > 0 ? "#00c853" : "#e53935";
         exacto = hasPrediction && g1===parseInt(result.score1) && g2===parseInt(result.score2);
+        exacto90 = alargueConGoles && hasPrediction && g1===a90 && g2===b90;
       }
       else pickColor = "#ffd600";
     }
@@ -218,11 +224,11 @@ function renderPicksModalContent() {
       <div style="flex:1;min-width:0;">
         <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.kickoff ? formatKickoff(m.kickoff) : ""} · ${m.group}</div>
         <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
-        ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}${result.penales ? ` · 🥅 Penales: ganó ${result.penales==='1'?m.team1:m.team2}` : ""}</div>` : ""}
+        ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}${alargueConGoles ? ` · ⏱️ 90': ${a90}-${b90}` : ""}${result.penales ? ` · 🥅 Penales: ganó ${result.penales==='1'?m.team1:m.team2}` : ""}</div>` : ""}
         ${(pick && isKnockout(m) && pick.outcome==='x' && pick.penales) ? `<div style="font-size:11px;color:#ffd600;">🥅 Su penal: gana ${pick.penales==='1'?m.team1:m.team2}</div>` : ""}
       </div>
       <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:13px;font-weight:600;color:${pickColor};">${exacto?'⭐ ':''}${pickText}</div>
+        <div style="font-size:13px;font-weight:600;color:${pickColor};">${exacto?'⭐ ':(exacto90?"⏱️ ":'')}${pickText}</div>
         ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
       </div>
     </div>`;
@@ -773,16 +779,22 @@ function renderMisPuntos() {
         const { g1, g2, hasPrediction } = resolveGoals(p);
         // ¿Marcador exacto? (ambos goles correctos)
         const exacto = hasPrediction && g1===parseInt(r.score1) && g2===parseInt(r.score2);
+        // ¿Acertó el marcador de los 90' en un partido definido en el alargue?
+        const a90 = parseInt(r.score1_90), b90 = parseInt(r.score2_90);
+        const hubo90 = !isNaN(a90) && !isNaN(b90);
+        const alargueConGoles = hubo90 && (a90!==parseInt(r.score1) || b90!==parseInt(r.score2));
+        const exacto90 = alargueConGoles && hasPrediction && g1===a90 && g2===b90;
         let pronostico = "";
         if (hasPrediction) pronostico = g1+"–"+g2;
         else if (p.outcome==="1") pronostico="Gana "+m.team1;
         else if (p.outcome==="2") pronostico="Gana "+m.team2;
         else if (p.outcome==="x") pronostico="Empate";
+        const marcaExtra = exacto ? ' ⭐ ¡Exacto!' : (exacto90 ? " ⏱️ ¡Exacto a los 90'!" : '');
         return `<div class="historial-row ${pts>0?'ok':'fail'}">
-          <span class="historial-icon">${exacto?'⭐':(pts>0?'✅':'❌')}</span>
+          <span class="historial-icon">${exacto?'⭐':(exacto90?'⏱️':(pts>0?'✅':'❌'))}</span>
           <div style="flex:1">
-            <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}</div>
-            <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}${exacto?' ⭐ ¡Exacto!':''}</div>
+            <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}${alargueConGoles?` <span style="font-size:10px;color:#ffd600;">(90': ${a90}-${b90})</span>`:''}</div>
+            <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}${marcaExtra}</div>
           </div>
           <span class="historial-pts">${pts>0?'+'+pts:'0'} pts</span>
         </div>`;
