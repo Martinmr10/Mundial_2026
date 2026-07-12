@@ -803,6 +803,65 @@ async function savePlayerPicks() {
   setTimeout(()=>{el.textContent=""; el.className="save-status";},3500);
 }
 
+// Estado: qué fases están abiertas en el historial del jugador
+let _historialOpenPhases = new Set();
+
+function toggleHistorialPhase(phaseId) {
+  if (_historialOpenPhases.has(phaseId)) _historialOpenPhases.delete(phaseId);
+  else _historialOpenPhases.add(phaseId);
+  renderMisPuntos();
+}
+function toggleAllHistorialPhases(open) {
+  if (open) PHASES.forEach(p => _historialOpenPhases.add(p.id));
+  else _historialOpenPhases.clear();
+  renderMisPuntos();
+}
+
+// Dibuja UNA fila del historial del jugador
+function historialRow(m) {
+  m = getResolvedMatch(m);
+  const r = cachedResults[m.id], p = playerPicks[m.id];
+  const pts = calcPoints(p, r);
+  const f1=FLAGS[m.team1]||"🏳", f2=FLAGS[m.team2]||"🏳";
+  const { g1, g2, hasPrediction } = resolveGoals(p);
+  const exacto = hasPrediction && g1===parseInt(r.score1) && g2===parseInt(r.score2);
+  const a90 = parseInt(r.score1_90), b90 = parseInt(r.score2_90);
+  const hubo90 = !isNaN(a90) && !isNaN(b90);
+  const alargueConGoles = hubo90 && (a90!==parseInt(r.score1) || b90!==parseInt(r.score2));
+  const exacto90 = alargueConGoles && hasPrediction && g1===a90 && g2===b90;
+  let pronostico = "";
+  if (hasPrediction) pronostico = g1+"–"+g2;
+  else if (p.outcome==="1") pronostico="Gana "+m.team1;
+  else if (p.outcome==="2") pronostico="Gana "+m.team2;
+  else if (p.outcome==="x") pronostico="Empate";
+  const marcaExtra = exacto ? ' ⭐ ¡Exacto!' : (exacto90 ? " ⏱️ ¡Exacto a los 90'!" : '');
+
+  // Penales: qué eligió el jugador y si acertó
+  let penalesLinea = "";
+  if (r.penales) {
+    const ganadorReal = r.penales === "1" ? m.team1 : m.team2;
+    if (p.penales) {
+      const suEleccion = p.penales === "1" ? m.team1 : m.team2;
+      const acerto = p.penales === r.penales;
+      penalesLinea = `<div style="font-size:11px;color:${acerto?'#00c853':'#e57373'};margin-top:2px;">
+        🥅 Penales: elegiste ${suEleccion} ${acerto ? `✅ +${settings.ptsPenales}pt` : `❌ (ganó ${ganadorReal})`}
+      </div>`;
+    } else {
+      penalesLinea = `<div style="font-size:11px;color:#8899bb;margin-top:2px;">🥅 Se definió por penales — ganó ${ganadorReal}</div>`;
+    }
+  }
+
+  return `<div class="historial-row ${pts>0?'ok':'fail'}">
+    <span class="historial-icon">${exacto?'⭐':(exacto90?'⏱️':(pts>0?'✅':'❌'))}</span>
+    <div style="flex:1">
+      <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}${alargueConGoles?` <span style="font-size:10px;color:#ffd600;">(90': ${a90}-${b90})</span>`:''}</div>
+      <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}${marcaExtra}</div>
+      ${penalesLinea}
+    </div>
+    <span class="historial-pts">${pts>0?'+'+pts:'0'} pts</span>
+  </div>`;
+}
+
 function renderMisPuntos() {
   const played  = ALL_MATCHES.filter(m => cachedResults[m.id] && playerPicks[m.id]?.outcome)
     .slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
@@ -810,6 +869,38 @@ function renderMisPuntos() {
   const pending = ALL_MATCHES.filter(m => !cachedResults[m.id] && playerPicks[m.id]);
   const total   = played.reduce((sum,m) => sum + calcPoints(playerPicks[m.id], cachedResults[m.id]), 0);
   const container = document.getElementById("mispuntos-container");
+
+  // ── Historial agrupado por fase (desplegable) ──
+  let historialHtml = "";
+  if (played.length) {
+    historialHtml = `<div class="mispuntos-historial">
+      <div class="group-label" style="padding:0 0 10px;">Historial de partidos</div>
+      <div class="picks-expand-row">
+        <button class="picks-expand-btn" onclick="toggleAllHistorialPhases(true)">⬇️ Abrir todas</button>
+        <button class="picks-expand-btn" onclick="toggleAllHistorialPhases(false)">⬆️ Cerrar todas</button>
+      </div>`;
+
+    PHASES.forEach(ph => {
+      const fasePartidos = played.filter(m => m.phase === ph.id);
+      if (!fasePartidos.length) return;
+
+      const ptsFase = fasePartidos.reduce((s,m) => s + calcPoints(playerPicks[m.id], cachedResults[m.id]), 0);
+      const aciertosFase = fasePartidos.filter(m => calcPoints(playerPicks[m.id], cachedResults[m.id]) > 0).length;
+      const abierta = _historialOpenPhases.has(ph.id);
+
+      historialHtml += `<div class="picks-fase-block">
+        <button class="picks-fase-header ${abierta?'open':''}" onclick="toggleHistorialPhase('${ph.id}')">
+          <span class="picks-fase-arrow">${abierta?'▼':'▶'}</span>
+          <span class="picks-fase-name">${ph.label}</span>
+          <span class="picks-fase-meta">${aciertosFase}/${fasePartidos.length} ✅ · <strong>${ptsFase} pts</strong></span>
+        </button>
+        ${abierta ? `<div class="picks-fase-body">${fasePartidos.map(m => historialRow(m)).join("")}</div>` : ""}
+      </div>`;
+    });
+
+    historialHtml += `</div>`;
+  }
+
   container.innerHTML = `
     <div class="mispuntos-hero"><div class="mispuntos-pts-big">${total}</div><div class="mispuntos-pts-label">PUNTOS TOTALES</div></div>
     <div class="mispuntos-stats">
@@ -819,124 +910,9 @@ function renderMisPuntos() {
       <div class="stat-box"><div class="stat-num muted">${pending.length}</div><div class="stat-label">Por jugar</div></div>
     </div>
     <div class="mispuntos-note"><p>✅ Ganador: ${settings.ptsWinner}pt · Goles de un equipo: +${settings.ptsPartial}pt · Marcador exacto: ${settings.ptsExact}pts · 🥅 Penales: +${settings.ptsPenales}pt<br>🔥 Desde Octavos los goles valen x${settings.golesMultiplier} · ⏱️ Exacto a los 90' (si hay alargue): +${settings.ptsExacto90}pts</p></div>
-    ${played.length ? `
-    <div class="mispuntos-historial">
-      <div class="group-label" style="padding:0 0 10px;">Historial de partidos</div>
-      ${played.map(m => {
-        m = getResolvedMatch(m);
-        const r = cachedResults[m.id], p = playerPicks[m.id];
-        const pts = calcPoints(p, r);
-        const f1=FLAGS[m.team1]||"🏳", f2=FLAGS[m.team2]||"🏳";
-        const { g1, g2, hasPrediction } = resolveGoals(p);
-        // ¿Marcador exacto? (ambos goles correctos)
-        const exacto = hasPrediction && g1===parseInt(r.score1) && g2===parseInt(r.score2);
-        // ¿Acertó el marcador de los 90' en un partido definido en el alargue?
-        const a90 = parseInt(r.score1_90), b90 = parseInt(r.score2_90);
-        const hubo90 = !isNaN(a90) && !isNaN(b90);
-        const alargueConGoles = hubo90 && (a90!==parseInt(r.score1) || b90!==parseInt(r.score2));
-        const exacto90 = alargueConGoles && hasPrediction && g1===a90 && g2===b90;
-        let pronostico = "";
-        if (hasPrediction) pronostico = g1+"–"+g2;
-        else if (p.outcome==="1") pronostico="Gana "+m.team1;
-        else if (p.outcome==="2") pronostico="Gana "+m.team2;
-        else if (p.outcome==="x") pronostico="Empate";
-        const marcaExtra = exacto ? ' ⭐ ¡Exacto!' : (exacto90 ? " ⏱️ ¡Exacto a los 90'!" : '');
-
-        // ── Penales: qué eligió el jugador y si acertó ──
-        let penalesLinea = "";
-        if (r.penales) { // el partido SÍ se fue a penales
-          const ganadorReal = r.penales === "1" ? m.team1 : m.team2;
-          if (p.penales) {
-            const suEleccion = p.penales === "1" ? m.team1 : m.team2;
-            const acerto = p.penales === r.penales;
-            penalesLinea = `<div style="font-size:11px;color:${acerto?'#00c853':'#e57373'};margin-top:2px;">
-              🥅 Penales: elegiste ${suEleccion} ${acerto ? `✅ +${settings.ptsPenales}pt` : `❌ (ganó ${ganadorReal})`}
-            </div>`;
-          } else {
-            penalesLinea = `<div style="font-size:11px;color:#8899bb;margin-top:2px;">🥅 Se definió por penales — ganó ${ganadorReal}</div>`;
-          }
-        }
-
-        return `<div class="historial-row ${pts>0?'ok':'fail'}">
-          <span class="historial-icon">${exacto?'⭐':(exacto90?'⏱️':(pts>0?'✅':'❌'))}</span>
-          <div style="flex:1">
-            <div class="historial-match">${f1} ${m.team1} ${r.score1}–${r.score2} ${m.team2} ${f2}${alargueConGoles?` <span style="font-size:10px;color:#ffd600;">(90': ${a90}-${b90})</span>`:''}</div>
-            <div style="font-size:11px;color:${pts>0?'#8899bb':'#e57373'}">Tu pronóstico: ${pronostico}${marcaExtra}</div>
-            ${penalesLinea}
-          </div>
-          <span class="historial-pts">${pts>0?'+'+pts:'0'} pts</span>
-        </div>`;
-      }).join("")}
-    </div>` : ""}`;
-}
-
-// ── Ranking de jugadores (visible para todos) ─────────────
-async function renderRankingJugadores() {
-  const container = document.getElementById("ranking-container");
-  if (!container) return;
-  container.innerHTML = `<div class="empty-state">Cargando...</div>`;
-  try {
-    const players = await DB.getPlayers();
-    if (!players || !players.length) {
-      container.innerHTML = `<div class="empty-state">Aún no hay jugadores.</div>`;
-      return;
-    }
-    const medals = ["🥇","🥈","🥉"];
-    const podium = players.slice(0,3);
-    const rest = players.slice(3);
-
-    let html = `<div class="ranking-title">🏆 RANKING DE JUGADORES</div>`;
-
-    // Podio destacado
-    html += `<div class="ranking-podium">`;
-    podium.forEach((p,i) => {
-      const isMe = p.name === currentPlayer;
-      html += `
-        <div class="podium-card podium-${i+1} ${isMe?'podium-me':''}">
-          <div class="podium-medal">${medals[i]}</div>
-          <div class="podium-name">${p.name}${isMe?' <span class="me-tag">(tú)</span>':''}</div>
-          <div class="podium-pts">${p.points}</div>
-          <div class="podium-pts-label">pts</div>
-        </div>`;
-    });
-    html += `</div>`;
-
-    // Resto de la tabla
-    if (rest.length) {
-      html += `<div class="ranking-list">`;
-      rest.forEach((p,i) => {
-        const pos = i + 4;
-        const isMe = p.name === currentPlayer;
-        html += `
-          <div class="ranking-row ${isMe?'ranking-me':''}">
-            <span class="ranking-pos">${pos}</span>
-            <span class="ranking-name">${p.name}${isMe?' <span class="me-tag">(tú)</span>':''}</span>
-            <span class="ranking-pts">${p.points} pts</span>
-          </div>`;
-      });
-      html += `</div>`;
-    }
-
-    container.innerHTML = html;
-  } catch(e) {
-    container.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
-  }
-}
-
-async function renderAdminTabla() {
-  const container = document.getElementById("admin-tabla-container");
-  container.innerHTML = `<div class="empty-state">Cargando...</div>`;
-  try {
-    const players = await DB.getPlayers();
-    if (!players||!players.length) { container.innerHTML=`<div class="empty-state">No hay jugadores.</div>`; return; }
-    const medals = ["🥇","🥈","🥉"];
-    container.innerHTML = `
-      <div class="tabla" style="margin:16px">
-        <div class="tabla-header"><span>Pos</span><span>Jugador</span><span>Pts</span></div>
-        ${players.map((p,i)=>`<div class="tabla-row"><span class="pos">${medals[i]||(i+1)}</span><span class="pname">${p.name}</span><span class="pts">${p.points}</span></div>`).join("")}
-      </div>
-      <p class="tabla-note" style="padding:8px 20px;text-align:center">Visible solo para el admin</p>`;
-  } catch(e) { container.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`; }
+    ${historialHtml}
+    ${!played.length ? '<div class="empty-state">Aún no hay partidos jugados con tus picks.</div>' : ''}
+  `;
 }
 
 function renderAdminMatches(phase) {
