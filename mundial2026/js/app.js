@@ -70,8 +70,8 @@ const DB = {
   disableMatch:  (match_id)   => sbFetch("enabled_matches?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
   getResults:    ()           => sbFetch("results?select=*"),
-  upsertResult:  (match_id, score1, score2, penales) =>
-    sbFetch("results", { method:"POST", body: JSON.stringify({match_id, score1, score2, penales: penales ?? null, updated_at: new Date().toISOString()}),
+  upsertResult:  (match_id, score1, score2, penales, score1_90, score2_90) =>
+    sbFetch("results", { method:"POST", body: JSON.stringify({match_id, score1, score2, penales: penales ?? null, score1_90: score1_90 ?? null, score2_90: score2_90 ?? null, updated_at: new Date().toISOString()}),
       headers:{"Prefer":"resolution=merge-duplicates,return=minimal"} }),
   deleteResult:  (match_id)   => sbFetch("results?match_id=eq."+encodeURIComponent(match_id), { method:"DELETE", prefer:"return=minimal" }),
 
@@ -108,6 +108,7 @@ const DB = {
       ptsExact:   parseInt(s.pts_exact   ?? 4),
       ptsPenales: parseInt(s.pts_penales ?? 1),
       golesMultiplier: parseFloat(s.goles_multiplier ?? 2),
+      ptsExacto90: parseInt(s.pts_exacto_90 ?? 2),
       visiblePhases: visiblePhases,
       wcApiKey:   s.wc_api_key || "",
     };
@@ -121,7 +122,7 @@ const DB = {
 let currentPlayer = null;
 let currentPhase  = "grupos";
 let adminPhase    = "grupos";
-let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, ptsPenales:1, golesMultiplier:2, visiblePhases:["grupos","r32","r16","cuartos","semi","final"], wcApiKey:"" };
+let settings      = { ptsWinner:1, ptsPartial:1, ptsExact:4, ptsPenales:1, golesMultiplier:2, ptsExacto90:2, visiblePhases:["grupos","r32","r16","cuartos","semi","final"], wcApiKey:"" };
 let playerPicks   = {};
 let cachedResults = {};
 let cachedEnabled = {};
@@ -383,10 +384,26 @@ function calcPoints(pick, result) {
     bonusPenales = settings.ptsPenales;
   }
 
-  // Marcador exacto: ganador (x1) + goles (x mult) + bono exacto (x1) + penales
+  // ── BONO: marcador exacto a los 90 minutos ──────────────
+  // Solo aplica si el admin registró el marcador de los 90 Y hubo goles en
+  // el alargue (o sea, el marcador final es distinto al de los 90).
+  // Si el partido se fue a penales, el marcador de 90 == final, así que NO
+  // entra este bono (ese jugador ya cobra el marcador exacto normal).
+  let bonus90 = 0;
+  const s1_90 = parseInt(result.score1_90);
+  const s2_90 = parseInt(result.score2_90);
+  const hubo90 = !isNaN(s1_90) && !isNaN(s2_90);
+  const huboAlargueConGoles = hubo90 && (s1_90 !== s1 || s2_90 !== s2);
+  if (huboAlargueConGoles && hasPrediction && g1 === s1_90 && g2 === s2_90) {
+    bonus90 = settings.ptsExacto90;
+  }
+
+  const extras = bonusPenales + bonus90;
+
+  // Marcador exacto: ganador (x1) + goles (x mult) + bono exacto (x1) + extras
   if (hasPrediction && g1 === s1 && g2 === s2) {
     const golesPts = (settings.ptsPartial * 2) * golMult;
-    return settings.ptsWinner + golesPts + settings.ptsExact + bonusPenales;
+    return settings.ptsWinner + golesPts + settings.ptsExact + extras;
   }
 
   let pts = 0;
@@ -395,7 +412,7 @@ function calcPoints(pick, result) {
     if (g1 === s1) pts += settings.ptsPartial * golMult;
     if (g2 === s2) pts += settings.ptsPartial * golMult;
   }
-  return pts + bonusPenales;
+  return pts + extras;
 }
 
 async function populateLoginDropdown() {
@@ -437,7 +454,7 @@ async function handleLogin() {
     (myPicksRows||[]).forEach(r => { playerPicks[r.match_id] = { outcome:r.outcome, goals1:r.goals1, goals2:r.goals2, penales:r.penales, _saved:true }; });
     const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
-    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {match_id:r.match_id, score1:r.score1, score2:r.score2, penales:r.penales}; });
+    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {match_id:r.match_id, score1:r.score1, score2:r.score2, penales:r.penales, score1_90:r.score1_90, score2_90:r.score2_90}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
     lateAccessPlayers = new Map((lateRows||[]).map(r => [r.player_name, r.expires_at]));
@@ -461,11 +478,12 @@ async function handleAdminLogin() {
     document.getElementById("pts-exact").value   = settings.ptsExact;
     const penInput = document.getElementById("pts-penales"); if (penInput) penInput.value = settings.ptsPenales;
     const golMultInput = document.getElementById("goles-multiplier"); if (golMultInput) golMultInput.value = settings.golesMultiplier;
+    const ex90Input = document.getElementById("pts-exacto-90"); if (ex90Input) ex90Input.value = settings.ptsExacto90;
     document.getElementById("wc-api-key").value  = settings.wcApiKey;
     renderPhaseToggles();
     const [resultsRows, enabledRows, lateRows] = await Promise.all([DB.getResults(), DB.getEnabled(), DB.getLateAccess()]);
     cachedResults = {};
-    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {match_id:r.match_id, score1:r.score1, score2:r.score2, penales:r.penales}; });
+    (resultsRows||[]).forEach(r => { cachedResults[r.match_id] = {match_id:r.match_id, score1:r.score1, score2:r.score2, penales:r.penales, score1_90:r.score1_90, score2_90:r.score2_90}; });
     cachedEnabled = {};
     (enabledRows||[]).forEach(r => { cachedEnabled[r.match_id] = true; });
     lateAccessPlayers = new Map((lateRows||[]).map(r => [r.player_name, r.expires_at]));
@@ -536,7 +554,7 @@ function renderMatchCard(m, result) {
       <div class="match-date">${m.kickoff ? formatKickoff(m.kickoff) : m.date || ""} ${locked && !hasResult ? "🔒" : ""} <span class="match-group-tag">${m.group}</span></div>
       <div class="teams-row">
         <div class="team"><span class="flag">${f1}</span><span class="tname">${m.team1}</span></div>
-        ${hasResult ? `<div class="scoreboard">${result.score1}<span class="vs-sep"> - </span>${result.score2}</div>` : `<div class="vs-label">VS</div>`}
+        ${hasResult ? `<div class="scoreboard">${result.score1}<span class="vs-sep"> - </span>${result.score2}</div>${(result.score1_90!==null && result.score1_90!==undefined && result.score1_90!=="" && (parseInt(result.score1_90)!==parseInt(result.score1) || parseInt(result.score2_90)!==parseInt(result.score2))) ? `<div class="score-90">⏱️ 90': ${result.score1_90}-${result.score2_90} · alargue</div>` : ""}` : `<div class="vs-label">VS</div>`}
         <div class="team right"><span class="tname">${m.team2}</span><span class="flag">${f2}</span></div>
       </div>
       ${noPick ? `<div class="no-pick-msg">${noPickMsg}</div>` : `
@@ -592,6 +610,14 @@ function getResultLabel(pick, result) {
   const g2ok = hasPrediction && g2 === s2;
   const penalesOk = result.penales && pick.penales && pick.penales === result.penales;
   const penalesTxt = penalesOk ? " + 🥅 penales" : "";
+
+  // ¿Acertó el marcador de los 90' en un partido que se definió en el alargue?
+  const s1_90 = parseInt(result.score1_90), s2_90 = parseInt(result.score2_90);
+  const hubo90 = !isNaN(s1_90) && !isNaN(s2_90);
+  const alargueConGoles = hubo90 && (s1_90 !== s1 || s2_90 !== s2);
+  const exacto90 = alargueConGoles && hasPrediction && g1 === s1_90 && g2 === s2_90;
+  if (exacto90) return "⏱️ ¡Marcador exacto a los 90'! (se definió en el alargue)" + penalesTxt;
+
   if (hasPrediction && g1ok && g2ok)    return "⭐ 🎯 ¡Marcador exacto!" + penalesTxt;
   if (wonCorrect && (g1ok || g2ok))     return "Acertaste ganador + goles marcados" + penalesTxt;
   if (!wonCorrect && (g1ok || g2ok))    return "Acertaste goles marcados" + penalesTxt;
@@ -735,7 +761,7 @@ function renderMisPuntos() {
       <div class="stat-box"><div class="stat-num red">${played.length-correct.length}</div><div class="stat-label">Fallados</div></div>
       <div class="stat-box"><div class="stat-num muted">${pending.length}</div><div class="stat-label">Por jugar</div></div>
     </div>
-    <div class="mispuntos-note"><p>✅ Ganador: ${settings.ptsWinner}pt · Goles de un equipo: +${settings.ptsPartial}pt · Marcador exacto: ${settings.ptsExact}pts · 🥅 Penales: +${settings.ptsPenales}pt<br>🔥 Desde Octavos los goles valen x${settings.golesMultiplier}</p></div>
+    <div class="mispuntos-note"><p>✅ Ganador: ${settings.ptsWinner}pt · Goles de un equipo: +${settings.ptsPartial}pt · Marcador exacto: ${settings.ptsExact}pts · 🥅 Penales: +${settings.ptsPenales}pt<br>🔥 Desde Octavos los goles valen x${settings.golesMultiplier} · ⏱️ Exacto a los 90' (si hay alargue): +${settings.ptsExacto90}pts</p></div>
     ${played.length ? `
     <div class="mispuntos-historial">
       <div class="group-label" style="padding:0 0 10px;">Historial de partidos</div>
@@ -868,6 +894,14 @@ function renderAdminMatchCard(m) {
         <div class="admin-team right"><span class="tname">${m.team2}</span><span class="flag">${f2}</span></div>
       </div>
       ${isKnockout(m) ? `
+      <div class="admin-90-row">
+        <span class="admin-90-label">⏱️ Marcador a los 90' (solo si hubo alargue):</span>
+        <div class="admin-90-inputs">
+          <input type="number" min="0" max="30" placeholder="-" id="s90-${m.id}-1" value="${r.score1_90??''}" />
+          <span class="vs-sep">–</span>
+          <input type="number" min="0" max="30" placeholder="-" id="s90-${m.id}-2" value="${r.score2_90??''}" />
+        </div>
+      </div>
       <div class="admin-penales-row">
         <span class="admin-penales-label">Penales (si hubo empate):</span>
         <select id="penales-${m.id}" class="admin-penales-select">
@@ -934,16 +968,25 @@ async function saveResults() {
       const s1=document.getElementById("score-"+m.id+"-1")?.value;
       const s2=document.getElementById("score-"+m.id+"-2")?.value;
       if (s1!==""&&s2!==""&&s1!==undefined&&s2!==undefined) {
-        // Penales: solo si es eliminatoria y el marcador es empate
+        // Penales: solo si es eliminatoria y el marcador final es empate
         let pen = null;
         if (isKnockout(m) && parseInt(s1) === parseInt(s2)) {
           pen = document.getElementById("penales-"+m.id)?.value || null;
         }
-        toSave.push({match_id:m.id, score1:parseInt(s1), score2:parseInt(s2), penales:pen});
-        cachedResults[m.id]={match_id:m.id, score1:parseInt(s1), score2:parseInt(s2), penales:pen};
+        // Marcador a los 90' (opcional, solo eliminatorias con alargue)
+        let s1_90 = null, s2_90 = null;
+        if (isKnockout(m)) {
+          const v1 = document.getElementById("s90-"+m.id+"-1")?.value;
+          const v2 = document.getElementById("s90-"+m.id+"-2")?.value;
+          if (v1!=="" && v2!=="" && v1!==undefined && v2!==undefined) {
+            s1_90 = parseInt(v1); s2_90 = parseInt(v2);
+          }
+        }
+        toSave.push({match_id:m.id, score1:parseInt(s1), score2:parseInt(s2), penales:pen, score1_90:s1_90, score2_90:s2_90});
+        cachedResults[m.id]={match_id:m.id, score1:parseInt(s1), score2:parseInt(s2), penales:pen, score1_90:s1_90, score2_90:s2_90};
       }
     });
-    await Promise.all(toSave.map(r => DB.upsertResult(r.match_id, r.score1, r.score2, r.penales)));
+    await Promise.all(toSave.map(r => DB.upsertResult(r.match_id, r.score1, r.score2, r.penales, r.score1_90, r.score2_90)));
     await recalcAllPoints();
     renderAdminMatches(adminPhase); // refrescar para reflejar equipos que avanzaron
     alert("✅ "+toSave.length+" resultado(s) guardado(s).");
@@ -1154,10 +1197,12 @@ async function saveSettings() {
   const ptsPenales = ptsPenalesEl ? (parseInt(ptsPenalesEl.value) || 0) : 1;
   const golesMultEl = document.getElementById("goles-multiplier");
   const golesMultiplier = golesMultEl ? (parseFloat(golesMultEl.value) || 1) : 2;
+  const exacto90El = document.getElementById("pts-exacto-90");
+  const ptsExacto90 = exacto90El ? (parseInt(exacto90El.value) || 0) : 2;
   setLoading("Guardando configuración...");
   try {
-    await DB.saveSettings({ pts_winner:ptsWinner, pts_partial:ptsPartial, pts_exact:ptsExact, pts_penales:ptsPenales, goles_multiplier:golesMultiplier });
-    settings = { ...settings, ptsWinner, ptsPartial, ptsExact, ptsPenales, golesMultiplier };
+    await DB.saveSettings({ pts_winner:ptsWinner, pts_partial:ptsPartial, pts_exact:ptsExact, pts_penales:ptsPenales, goles_multiplier:golesMultiplier, pts_exacto_90:ptsExacto90 });
+    settings = { ...settings, ptsWinner, ptsPartial, ptsExact, ptsPenales, golesMultiplier, ptsExacto90 };
     await recalcAllPoints();
     alert("✅ Configuración guardada y puntos recalculados.");
   } catch(e) { alert("Error: "+e.message); }
@@ -1229,7 +1274,7 @@ async function autoRefreshPlayer() {
     ]);
 
     const newResults = {};
-    (resultsRows||[]).forEach(r => { newResults[r.match_id] = {match_id:r.match_id, score1:r.score1, score2:r.score2, penales:r.penales}; });
+    (resultsRows||[]).forEach(r => { newResults[r.match_id] = {match_id:r.match_id, score1:r.score1, score2:r.score2, penales:r.penales, score1_90:r.score1_90, score2_90:r.score2_90}; });
     const newEnabled = {};
     (enabledRows||[]).forEach(r => { newEnabled[r.match_id] = true; });
 
