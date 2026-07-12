@@ -1148,3 +1148,35 @@ select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,214,0,0
 .bk-r32-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
 }
+/* ── Marcador a los 90' ────────────────────────────────── */
+.admin-90-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.admin-90-label { font-size: 11px; color: #8899bb; }
+.admin-90-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+.admin-90-inputs input {
+  width: 48px;
+  padding: 6px;
+  text-align: center;
+  background: #0f1829;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: #f0f4ff;
+  font-size: 14px;
+}
+.score-90 {
+  font-size: 10px;
+  color: #ffd600;
+  text-align: center;
+  margin-top: 2px;
+}
