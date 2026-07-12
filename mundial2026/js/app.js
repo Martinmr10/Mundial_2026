@@ -153,7 +153,7 @@ async function viewPlayerPicks(playerName) {
     (picksRows||[]).forEach(r => { picksMap[r.match_id] = r; });
     const resultsMap = {};
     (resultsRows||[]).forEach(r => { resultsMap[r.match_id] = r; });
-    _picksModalData = { playerName, picksMap, resultsMap, filter:"todos" };
+    _picksModalData = { playerName, picksMap, resultsMap, filter:"todos", openPhases:new Set() };
     renderPicksModalContent();
   } catch(e) {
     document.getElementById("modal-picks-content").innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
@@ -165,28 +165,82 @@ function setPicksFilter(filter) {
   renderPicksModalContent();
 }
 
+// Abrir/cerrar una fase en el modal de picks
+function togglePhaseSection(phaseId) {
+  if (!_picksModalData.openPhases) _picksModalData.openPhases = new Set();
+  if (_picksModalData.openPhases.has(phaseId)) _picksModalData.openPhases.delete(phaseId);
+  else _picksModalData.openPhases.add(phaseId);
+  renderPicksModalContent();
+}
+
+// Abrir o cerrar TODAS las fases de golpe
+function toggleAllPhaseSections(open) {
+  if (!_picksModalData.openPhases) _picksModalData.openPhases = new Set();
+  if (open) PHASES.forEach(p => _picksModalData.openPhases.add(p.id));
+  else _picksModalData.openPhases.clear();
+  renderPicksModalContent();
+}
+
+// Dibuja UNA fila de pick en el modal del admin
+function pickModalRow(m, pick, result) {
+  m = getResolvedMatch(m);
+  const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
+  const hasResult = result && result.score1 !== undefined;
+  let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0, exacto = false, exacto90 = false;
+  const a90 = hasResult ? parseInt(result.score1_90) : NaN;
+  const b90 = hasResult ? parseInt(result.score2_90) : NaN;
+  const hubo90 = !isNaN(a90) && !isNaN(b90);
+  const alargueConGoles = hubo90 && (a90!==parseInt(result.score1) || b90!==parseInt(result.score2));
+  if (pick) {
+    const { g1, g2, hasPrediction } = resolveGoals(pick);
+    if (hasPrediction) pickText = g1+"–"+g2;
+    else if (pick.outcome === "1") pickText = "Gana "+m.team1;
+    else if (pick.outcome === "2") pickText = "Gana "+m.team2;
+    else if (pick.outcome === "x") pickText = "Empate";
+    if (hasResult) {
+      pts = calcPoints(pick, result);
+      pickColor = pts > 0 ? "#00c853" : "#e53935";
+      exacto = hasPrediction && g1===parseInt(result.score1) && g2===parseInt(result.score2);
+      exacto90 = alargueConGoles && hasPrediction && g1===a90 && g2===b90;
+    }
+    else pickColor = "#ffd600";
+  }
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.kickoff ? formatKickoff(m.kickoff) : ""} · ${m.group}</div>
+      <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
+      ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}${alargueConGoles ? ` · ⏱️ 90': ${a90}-${b90}` : ""}${result.penales ? ` · 🥅 Penales: ganó ${result.penales==='1'?m.team1:m.team2}` : ""}</div>` : ""}
+      ${(pick && isKnockout(m) && pick.outcome==='x' && pick.penales) ? `<div style="font-size:11px;color:#ffd600;">🥅 Su penal: gana ${pick.penales==='1'?m.team1:m.team2}</div>` : ""}
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:13px;font-weight:600;color:${pickColor};">${exacto?'⭐ ':(exacto90?"⏱️ ":'')}${pickText}</div>
+      ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
+    </div>
+  </div>`;
+}
+
 function renderPicksModalContent() {
   const { picksMap, resultsMap, filter } = _picksModalData;
+  const openPhases = _picksModalData.openPhases || new Set();
 
   // Filtrar según el botón seleccionado
   let matches = ALL_MATCHES.filter(m => picksMap[m.id] || resultsMap[m.id]);
   if (filter === "habilitados") {
-    // Partidos habilitados que aún NO tienen resultado
     matches = matches.filter(m => cachedEnabled[m.id] && !(resultsMap[m.id] && resultsMap[m.id].score1 !== undefined));
   } else if (filter === "jugados") {
-    // Partidos que ya tienen resultado
     matches = matches.filter(m => resultsMap[m.id] && resultsMap[m.id].score1 !== undefined);
   }
 
-  // Ordenar por horario de juego
-  matches = matches.slice().sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
-
-  // Botones de filtro
+  // Botones de filtro + abrir/cerrar todo
   const filterBtns = `
     <div class="picks-filter-row">
       <button class="picks-filter-btn ${filter==='habilitados'?'active':''}" onclick="setPicksFilter('habilitados')">🔵 Habilitados</button>
       <button class="picks-filter-btn ${filter==='jugados'?'active':''}" onclick="setPicksFilter('jugados')">⚪ Jugados</button>
       <button class="picks-filter-btn ${filter==='todos'?'active':''}" onclick="setPicksFilter('todos')">📋 Todos</button>
+    </div>
+    <div class="picks-expand-row">
+      <button class="picks-expand-btn" onclick="toggleAllPhaseSections(true)">⬇️ Abrir todas</button>
+      <button class="picks-expand-btn" onclick="toggleAllPhaseSections(false)">⬆️ Cerrar todas</button>
     </div>`;
 
   if (!matches.length) {
@@ -194,47 +248,44 @@ function renderPicksModalContent() {
     return;
   }
 
-  const rows = matches.map(m => {
-    m = getResolvedMatch(m);
-    const pick = picksMap[m.id];
-    const result = resultsMap[m.id];
-    const f1 = FLAGS[m.team1]||"🏳", f2 = FLAGS[m.team2]||"🏳";
-    const hasResult = result && result.score1 !== undefined;
-    let pickText = "⚪ Sin pronóstico", pickColor = "#8899bb", pts = 0, exacto = false, exacto90 = false;
-    // ¿Hubo alargue con goles en este partido?
-    const a90 = hasResult ? parseInt(result.score1_90) : NaN;
-    const b90 = hasResult ? parseInt(result.score2_90) : NaN;
-    const hubo90 = !isNaN(a90) && !isNaN(b90);
-    const alargueConGoles = hubo90 && (a90!==parseInt(result.score1) || b90!==parseInt(result.score2));
-    if (pick) {
-      const { g1, g2, hasPrediction } = resolveGoals(pick);
-      if (hasPrediction) pickText = g1+"–"+g2;
-      else if (pick.outcome === "1") pickText = "Gana "+m.team1;
-      else if (pick.outcome === "2") pickText = "Gana "+m.team2;
-      else if (pick.outcome === "x") pickText = "Empate";
-      if (hasResult) {
-        pts = calcPoints(pick, result);
-        pickColor = pts > 0 ? "#00c853" : "#e53935";
-        exacto = hasPrediction && g1===parseInt(result.score1) && g2===parseInt(result.score2);
-        exacto90 = alargueConGoles && hasPrediction && g1===a90 && g2===b90;
-      }
-      else pickColor = "#ffd600";
-    }
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:11px;color:#8899bb;margin-bottom:2px;">${m.kickoff ? formatKickoff(m.kickoff) : ""} · ${m.group}</div>
-        <div style="font-size:13px;font-weight:500;color:#f0f4ff;">${f1} ${m.team1} vs ${m.team2} ${f2}</div>
-        ${hasResult ? `<div style="font-size:11px;color:#8899bb;">Resultado: ${result.score1}–${result.score2}${alargueConGoles ? ` · ⏱️ 90': ${a90}-${b90}` : ""}${result.penales ? ` · 🥅 Penales: ganó ${result.penales==='1'?m.team1:m.team2}` : ""}</div>` : ""}
-        ${(pick && isKnockout(m) && pick.outcome==='x' && pick.penales) ? `<div style="font-size:11px;color:#ffd600;">🥅 Su penal: gana ${pick.penales==='1'?m.team1:m.team2}</div>` : ""}
-      </div>
-      <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:13px;font-weight:600;color:${pickColor};">${exacto?'⭐ ':(exacto90?"⏱️ ":'')}${pickText}</div>
-        ${hasResult && pick ? `<div style="font-size:12px;font-family:'Bebas Neue',sans-serif;color:${pts>0?'#ffd600':'#8899bb'};">${pts>0?'+'+pts+' pts':''}</div>` : ""}
-      </div>
-    </div>`;
-  }).join("");
+  // ── Agrupar por fase (en el orden oficial de PHASES) ──
+  let html = filterBtns;
+  let totalGeneral = 0;
 
-  document.getElementById("modal-picks-content").innerHTML = filterBtns + rows;
+  PHASES.forEach(ph => {
+    const fasePartidos = matches
+      .filter(m => m.phase === ph.id)
+      .slice()
+      .sort((a,b) => new Date(a.kickoff||0) - new Date(b.kickoff||0));
+    if (!fasePartidos.length) return;
+
+    // Contar picks y puntos de esta fase
+    let ptsFase = 0, conPick = 0;
+    fasePartidos.forEach(m => {
+      const pick = picksMap[m.id], result = resultsMap[m.id];
+      if (pick) conPick++;
+      if (pick && result && result.score1 !== undefined) ptsFase += calcPoints(pick, result);
+    });
+    totalGeneral += ptsFase;
+
+    const abierta = openPhases.has(ph.id);
+    const filas = abierta
+      ? fasePartidos.map(m => pickModalRow(m, picksMap[m.id], resultsMap[m.id])).join("")
+      : "";
+
+    html += `<div class="picks-fase-block">
+      <button class="picks-fase-header ${abierta?'open':''}" onclick="togglePhaseSection('${ph.id}')">
+        <span class="picks-fase-arrow">${abierta?'▼':'▶'}</span>
+        <span class="picks-fase-name">${ph.label}</span>
+        <span class="picks-fase-meta">${conPick}/${fasePartidos.length} picks · <strong>${ptsFase} pts</strong></span>
+      </button>
+      ${abierta ? `<div class="picks-fase-body">${filas}</div>` : ""}
+    </div>`;
+  });
+
+  html += `<div class="picks-total-row">TOTAL: <strong>${totalGeneral} pts</strong></div>`;
+
+  document.getElementById("modal-picks-content").innerHTML = html;
 }
 
 function closePicksModal() {
