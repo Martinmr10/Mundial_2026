@@ -1375,6 +1375,74 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) autoRefreshPlayer();
 });
 
+async function renderRankingJugadores() {
+  const container = document.getElementById("ranking-container");
+  if (!container) return;
+  container.innerHTML = `<div class="empty-state">Cargando...</div>`;
+  try {
+    const players = await DB.getPlayers();
+    if (!players || !players.length) {
+      container.innerHTML = `<div class="empty-state">Aún no hay jugadores.</div>`;
+      return;
+    }
+    const medals = ["🥇","🥈","🥉"];
+    const podium = players.slice(0,3);
+    const rest = players.slice(3);
+
+    let html = `<div class="ranking-title">🏆 RANKING DE JUGADORES</div>`;
+
+    // Podio destacado
+    html += `<div class="ranking-podium">`;
+    podium.forEach((p,i) => {
+      const isMe = p.name === currentPlayer;
+      html += `
+        <div class="podium-card podium-${i+1} ${isMe?'podium-me':''}">
+          <div class="podium-medal">${medals[i]}</div>
+          <div class="podium-name">${p.name}${isMe?' <span class="me-tag">(tú)</span>':''}</div>
+          <div class="podium-pts">${p.points}</div>
+          <div class="podium-pts-label">pts</div>
+        </div>`;
+    });
+    html += `</div>`;
+
+    // Resto de la tabla
+    if (rest.length) {
+      html += `<div class="ranking-list">`;
+      rest.forEach((p,i) => {
+        const pos = i + 4;
+        const isMe = p.name === currentPlayer;
+        html += `
+          <div class="ranking-row ${isMe?'ranking-me':''}">
+            <span class="ranking-pos">${pos}</span>
+            <span class="ranking-name">${p.name}${isMe?' <span class="me-tag">(tú)</span>':''}</span>
+            <span class="ranking-pts">${p.points} pts</span>
+          </div>`;
+      });
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+async function renderAdminTabla() {
+  const container = document.getElementById("admin-tabla-container");
+  container.innerHTML = `<div class="empty-state">Cargando...</div>`;
+  try {
+    const players = await DB.getPlayers();
+    if (!players||!players.length) { container.innerHTML=`<div class="empty-state">No hay jugadores.</div>`; return; }
+    const medals = ["🥇","🥈","🥉"];
+    container.innerHTML = `
+      <div class="tabla" style="margin:16px">
+        <div class="tabla-header"><span>Pos</span><span>Jugador</span><span>Pts</span></div>
+        ${players.map((p,i)=>`<div class="tabla-row"><span class="pos">${medals[i]||(i+1)}</span><span class="pname">${p.name}</span><span class="pts">${p.points}</span></div>`).join("")}
+      </div>
+      <p class="tabla-note" style="padding:8px 20px;text-align:center">Visible solo para el admin</p>`;
+  } catch(e) { container.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`; }
+}
+
 // ══════════════════════════════════════════════════════
 //  LLAVES (bracket visual estilo torneo, adaptado a móvil)
 //  Dos lados que convergen en la Final. Banderas + nombre corto.
