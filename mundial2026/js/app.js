@@ -1447,6 +1447,21 @@ async function renderAdminTabla() {
 // ══════════════════════════════════════════════════════
 //  ESTADÍSTICAS FINALES (admin) — listas por categoría
 // ══════════════════════════════════════════════════════
+let _statsOpenCats = new Set();      // categorías abiertas
+let _statsData = null;               // cache de las métricas calculadas
+
+function toggleStatCategory(catId) {
+  if (_statsOpenCats.has(catId)) _statsOpenCats.delete(catId);
+  else _statsOpenCats.add(catId);
+  renderStatsFromCache();
+}
+function toggleAllStatCategories(open) {
+  const cats = ["exactos","goles","picks","ptsFinales","ptsGrupos"];
+  if (open) cats.forEach(c => _statsOpenCats.add(c));
+  else _statsOpenCats.clear();
+  renderStatsFromCache();
+}
+
 async function renderAdminStats() {
   const container = document.getElementById("admin-stats-container");
   if (!container) return;
@@ -1458,21 +1473,18 @@ async function renderAdminStats() {
       DB.getPlayers(), DB.getResults(), DB.getAllPicks()
     ]);
 
-    // Mapa de resultados por match_id
     const resMap = {};
     (resultsRows||[]).forEach(r => { resMap[r.match_id] = r; });
 
-    // Inicializar métricas por jugador
     const stats = {};
     (players||[]).forEach(p => {
       stats[p.name] = { name:p.name, exactos:0, goles:0, picks:0, ptsFinales:0, ptsGrupos:0 };
     });
 
-    // Recorrer todos los picks
     (allPicks||[]).forEach(pick => {
       const s = stats[pick.player_name];
-      if (!s) return; // pick de jugador borrado
-      s.picks++; // participación
+      if (!s) return;
+      s.picks++;
 
       const result = resMap[pick.match_id];
       if (!result || result.score1 === undefined || result.score1 === null || result.score1 === "") return;
@@ -1484,54 +1496,72 @@ async function renderAdminStats() {
       const s1 = parseInt(result.score1), s2 = parseInt(result.score2);
       if (isNaN(s1) || isNaN(s2)) return;
 
-      // Goles individuales acertados
       if (hasPrediction) {
         if (g1 === s1) s.goles++;
         if (g2 === s2) s.goles++;
       }
-      // Marcador exacto
       if (hasPrediction && g1 === s1 && g2 === s2) s.exactos++;
 
-      // Puntos por fase (usando calcPoints con el result completo)
       const pts = calcPoints(pick, result);
       if (m.phase === "grupos") s.ptsGrupos += pts;
       else if (["r16","cuartos","semi","final"].includes(m.phase)) s.ptsFinales += pts;
     });
 
-    const arr = Object.values(stats);
-
-    // Helper para armar una lista ordenada por una métrica
-    const lista = (titulo, icono, campo, sufijo) => {
-      const ordenados = arr.slice().sort((a,b) => b[campo] - a[campo]);
-      const maxVal = ordenados.length ? ordenados[0][campo] : 0;
-      const filas = ordenados.map((p, i) => {
-        const esLider = p[campo] === maxVal && maxVal > 0;
-        const medalla = i===0 ? "🥇" : i===1 ? "🥈" : i===2 ? "🥉" : (i+1)+".";
-        return `<div class="stat-row ${esLider?'stat-leader':''}">
-          <span class="stat-pos">${medalla}</span>
-          <span class="stat-player">${p.name}</span>
-          <span class="stat-value">${p[campo]}${sufijo||''}</span>
-        </div>`;
-      }).join("");
-      return `<div class="stat-category">
-        <div class="stat-cat-title">${icono} ${titulo}</div>
-        <div class="stat-cat-body">${filas}</div>
-      </div>`;
-    };
-
-    let html = `<div class="stats-header">🏅 ESTADÍSTICAS FINALES</div>
-      <p class="stats-sub">Mundial 2026 · Locos Ruales</p>`;
-    html += lista("Rey del marcador exacto", "👑", "exactos", " ⭐");
-    html += lista("El más goleador", "⚽", "goles", " goles");
-    html += lista("El más participativo", "🎯", "picks", " picks");
-    html += lista("El mejor en fases finales", "🔥", "ptsFinales", " pts");
-    html += lista("El mejor en fase de grupos", "🏁", "ptsGrupos", " pts");
-
-    container.innerHTML = html;
+    _statsData = Object.values(stats);
+    renderStatsFromCache();
 
   } catch(e) {
     container.innerHTML = `<div class="empty-state">Error al calcular: ${e.message}</div>`;
   }
+}
+
+// Dibuja las listas desde el cache (para abrir/cerrar sin recalcular)
+function renderStatsFromCache() {
+  const container = document.getElementById("admin-stats-container");
+  if (!container || !_statsData) return;
+  const arr = _statsData;
+
+  const lista = (titulo, icono, campo, sufijo) => {
+    const abierta = _statsOpenCats.has(campo);
+    const ordenados = arr.slice().sort((a,b) => b[campo] - a[campo]);
+    const maxVal = ordenados.length ? ordenados[0][campo] : 0;
+    // Resumen para la cabecera: el líder
+    const lider = ordenados.length ? ordenados[0] : null;
+    const resumen = (lider && maxVal > 0) ? `${lider.name} · ${maxVal}${sufijo||''}` : "—";
+
+    const filas = abierta ? ordenados.map((p, i) => {
+      const esLider = p[campo] === maxVal && maxVal > 0;
+      const medalla = i===0 ? "🥇" : i===1 ? "🥈" : i===2 ? "🥉" : (i+1)+".";
+      return `<div class="stat-row ${esLider?'stat-leader':''}">
+        <span class="stat-pos">${medalla}</span>
+        <span class="stat-player">${p.name}</span>
+        <span class="stat-value">${p[campo]}${sufijo||''}</span>
+      </div>`;
+    }).join("") : "";
+
+    return `<div class="stat-category">
+      <button class="stat-cat-title ${abierta?'open':''}" onclick="toggleStatCategory('${campo}')">
+        <span class="stat-cat-arrow">${abierta?'▼':'▶'}</span>
+        <span class="stat-cat-name">${icono} ${titulo}</span>
+        <span class="stat-cat-leader">${abierta?'':'🥇 '+resumen}</span>
+      </button>
+      ${abierta ? `<div class="stat-cat-body">${filas}</div>` : ""}
+    </div>`;
+  };
+
+  let html = `<div class="stats-header">🏅 ESTADÍSTICAS FINALES</div>
+    <p class="stats-sub">Mundial 2026 · Locos Ruales</p>
+    <div class="picks-expand-row">
+      <button class="picks-expand-btn" onclick="toggleAllStatCategories(true)">⬇️ Abrir todas</button>
+      <button class="picks-expand-btn" onclick="toggleAllStatCategories(false)">⬆️ Cerrar todas</button>
+    </div>`;
+  html += lista("Rey del marcador exacto", "👑", "exactos", " ⭐");
+  html += lista("El más goleador", "⚽", "goles", " goles");
+  html += lista("El más participativo", "🎯", "picks", " picks");
+  html += lista("El mejor en fases finales", "🔥", "ptsFinales", " pts");
+  html += lista("El mejor en fase de grupos", "🏁", "ptsGrupos", " pts");
+
+  container.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════════════
