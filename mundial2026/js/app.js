@@ -566,6 +566,7 @@ function switchAdminTab(tab) {
   document.querySelectorAll("#screen-admin .tab-content").forEach(c => c.classList.toggle("active", c.id==="atab-"+tab));
   if (tab==="jugadores") renderAdminPlayers();
   if (tab==="tabla") renderAdminTabla();
+  if (tab==="stats") renderAdminStats();
 }
 
 function renderPhaseSelector(cid, activePhase, isAdmin) {
@@ -1441,6 +1442,96 @@ async function renderAdminTabla() {
       </div>
       <p class="tabla-note" style="padding:8px 20px;text-align:center">Visible solo para el admin</p>`;
   } catch(e) { container.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`; }
+}
+
+// ══════════════════════════════════════════════════════
+//  ESTADÍSTICAS FINALES (admin) — listas por categoría
+// ══════════════════════════════════════════════════════
+async function renderAdminStats() {
+  const container = document.getElementById("admin-stats-container");
+  if (!container) return;
+  container.innerHTML = `<div class="empty-state">Calculando estadísticas...</div>`;
+
+  try {
+    // Traer TODO con paginación (sin tope de 1000)
+    const [players, resultsRows, allPicks] = await Promise.all([
+      DB.getPlayers(), DB.getResults(), DB.getAllPicks()
+    ]);
+
+    // Mapa de resultados por match_id
+    const resMap = {};
+    (resultsRows||[]).forEach(r => { resMap[r.match_id] = r; });
+
+    // Inicializar métricas por jugador
+    const stats = {};
+    (players||[]).forEach(p => {
+      stats[p.name] = { name:p.name, exactos:0, goles:0, picks:0, ptsFinales:0, ptsGrupos:0 };
+    });
+
+    // Recorrer todos los picks
+    (allPicks||[]).forEach(pick => {
+      const s = stats[pick.player_name];
+      if (!s) return; // pick de jugador borrado
+      s.picks++; // participación
+
+      const result = resMap[pick.match_id];
+      if (!result || result.score1 === undefined || result.score1 === null || result.score1 === "") return;
+
+      const m = ALL_MATCHES.find(x => x.id === pick.match_id);
+      if (!m) return;
+
+      const { g1, g2, hasPrediction } = resolveGoals(pick);
+      const s1 = parseInt(result.score1), s2 = parseInt(result.score2);
+      if (isNaN(s1) || isNaN(s2)) return;
+
+      // Goles individuales acertados
+      if (hasPrediction) {
+        if (g1 === s1) s.goles++;
+        if (g2 === s2) s.goles++;
+      }
+      // Marcador exacto
+      if (hasPrediction && g1 === s1 && g2 === s2) s.exactos++;
+
+      // Puntos por fase (usando calcPoints con el result completo)
+      const pts = calcPoints(pick, result);
+      if (m.phase === "grupos") s.ptsGrupos += pts;
+      else if (["r16","cuartos","semi","final"].includes(m.phase)) s.ptsFinales += pts;
+    });
+
+    const arr = Object.values(stats);
+
+    // Helper para armar una lista ordenada por una métrica
+    const lista = (titulo, icono, campo, sufijo) => {
+      const ordenados = arr.slice().sort((a,b) => b[campo] - a[campo]);
+      const maxVal = ordenados.length ? ordenados[0][campo] : 0;
+      const filas = ordenados.map((p, i) => {
+        const esLider = p[campo] === maxVal && maxVal > 0;
+        const medalla = i===0 ? "🥇" : i===1 ? "🥈" : i===2 ? "🥉" : (i+1)+".";
+        return `<div class="stat-row ${esLider?'stat-leader':''}">
+          <span class="stat-pos">${medalla}</span>
+          <span class="stat-player">${p.name}</span>
+          <span class="stat-value">${p[campo]}${sufijo||''}</span>
+        </div>`;
+      }).join("");
+      return `<div class="stat-category">
+        <div class="stat-cat-title">${icono} ${titulo}</div>
+        <div class="stat-cat-body">${filas}</div>
+      </div>`;
+    };
+
+    let html = `<div class="stats-header">🏅 ESTADÍSTICAS FINALES</div>
+      <p class="stats-sub">Mundial 2026 · Locos Ruales</p>`;
+    html += lista("Rey del marcador exacto", "👑", "exactos", " ⭐");
+    html += lista("El más goleador", "⚽", "goles", " goles");
+    html += lista("El más participativo", "🎯", "picks", " picks");
+    html += lista("El mejor en fases finales", "🔥", "ptsFinales", " pts");
+    html += lista("El mejor en fase de grupos", "🏁", "ptsGrupos", " pts");
+
+    container.innerHTML = html;
+
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state">Error al calcular: ${e.message}</div>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════
