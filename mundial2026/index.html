@@ -156,6 +156,7 @@
     <button class="tab active" data-tab="resultados" onclick="switchAdminTab('resultados')">RESULTADOS</button>
     <button class="tab" data-tab="jugadores"  onclick="switchAdminTab('jugadores')">JUGADORES</button>
     <button class="tab" data-tab="tabla"      onclick="switchAdminTab('tabla')">TABLA</button>
+    <button class="tab" data-tab="stats"      onclick="switchAdminTab('stats')">🏅 STATS</button>
     <button class="tab" data-tab="settings"   onclick="switchAdminTab('settings')">CONFIG</button>
   </nav>
 
@@ -189,6 +190,10 @@
   <!-- TABLA -->
   <div id="atab-tabla" class="tab-content">
     <div class="tabla-container" id="admin-tabla-container"></div>
+  </div>
+
+  <div id="atab-stats" class="tab-content">
+    <div id="admin-stats-container" style="padding:12px 16px 80px;"></div>
   </div>
 
   <!-- CONFIG -->
